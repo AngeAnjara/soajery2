@@ -1,6 +1,7 @@
 
 const nextConfig = {
   turbopack: {},
+  output: 'standalone',
   images: {
     domains: ["localhost"],
     remotePatterns: [

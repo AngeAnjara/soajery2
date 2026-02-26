@@ -60,13 +60,37 @@ export function AboutSection() {
       <div ref={ref} className="grid items-start gap-10 md:grid-cols-2">
         <div>
           <h2 className="text-3xl font-semibold tracking-tight">À propos de Soajery</h2>
-          <p className="mt-4 text-muted-foreground">
-            Notre mission est de rendre l’immobilier plus accessible, transparent et sécurisé. Nous vous accompagnons
-            dans le choix de votre lotissement, la prise de rendez-vous et la vérification de vos documents.
-          </p>
-          <p className="mt-4 text-muted-foreground">
-            Un service moderne, une équipe à l’écoute et des processus clairs pour avancer en confiance.
-          </p>
+          <div className="mt-4 space-y-4 text-muted-foreground">
+            <p>
+              Nous sommes un acteur indépendant du foncier à Madagascar, avant tout issu de l’expérience du terrain.
+            </p>
+            <p>
+              Au fil des années, nous avons acheté, vendu et géré plusieurs terrains, principalement à Antananarivo et dans ses environs. Comme beaucoup, nous avons fait face aux réalités du foncier malgache : procédures complexes, informations contradictoires, risques juridiques, lenteurs administratives… mais aussi de bonnes opportunités lorsqu’on est bien informé.
+            </p>
+            <p>
+              C’est à partir de ces expériences concrètes que nous avons décidé de partager, expliquer et sensibiliser.
+            </p>
+            <p>
+              À travers notre page Facebook et notre site web dédiée au foncier à Madagascar, nous partageons :
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-sm">
+              <li>des retours d’expérience réels,</li>
+              <li>des leçons tirées de réussites comme d’erreurs,</li>
+              <li>des conseils pratiques basés sur ce que nous avons vécu,</li>
+              <li>des explications simples sur les démarches foncières (titre, bornage, mutation, etc.).</li>
+            </ul>
+            <p>
+              En parallèle, nous proposons à la vente des terrains que nous connaissons directement, situés à Antananarivo et alentours, avec une priorité donnée à la clarté de la situation foncière et à la transparence vis-à-vis des acheteurs.
+            </p>
+            <p>
+              Notre objectif n’est pas de promettre l’impossible, mais de :
+            </p>
+            <ul className="list-disc list-inside space-y-1 text-sm">
+              <li>👉 partager une expérience utile,</li>
+              <li>👉 aider à éviter les erreurs courantes,</li>
+              <li>👉 favoriser des transactions foncières plus sûres et plus réfléchies à Madagascar.</li>
+            </ul>
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3 md:grid-cols-1">
