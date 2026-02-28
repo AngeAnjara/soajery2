@@ -266,6 +266,15 @@ export function preRunFlow(flow: FlowDefinition, userAnswers: UserAnswers): Flow
     }
 
     if (node.type === "action") {
+      if ((node as any).data?.actionType === "call_ai") {
+        const prompt = generatePrompt(userAnswers, flow.nodes)
+        return { actionType: "call_ai", prompt }
+      }
+
+      if ((node as any).data?.actionType === "redirect") {
+        return { actionType: "redirect" }
+      }
+
       if ((node as any).data?.actionType === "show_result") {
         const next = pickSingleOutgoingTarget(flow, nodeId)
         if (!next) return { actionType: "show_result", nextNodeId: nodeId }
