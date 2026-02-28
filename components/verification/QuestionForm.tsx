@@ -18,6 +18,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
   const [answers, setAnswers] = React.useState<Record<string, string | string[] | boolean | number>>({})
   const [loading, setLoading] = React.useState(true)
   const [submitting, setSubmitting] = React.useState(false)
+  const [terminalAlert, setTerminalAlert] = React.useState(false)
 
   const fetchQuestions = React.useCallback(
     async (nextAnswers: Record<string, string | string[] | boolean | number>) => {
@@ -30,7 +31,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
       if (!res.ok) {
         throw new Error(data?.error || "Erreur")
       }
-      return data.questions || []
+      return { questions: (data?.questions || []) as any[], terminalAlert: !!data?.terminalAlert }
     },
     [flowId],
   )
@@ -41,8 +42,9 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
     ;(async () => {
       try {
         if (mounted) {
-          const qs = await fetchQuestions({})
-          setQuestions(qs)
+          const r = await fetchQuestions({})
+          setQuestions(r.questions as any)
+          setTerminalAlert(!!r.terminalAlert)
         }
       } catch (err: any) {
         toast.error(err?.message || "Erreur lors du chargement des questions")
@@ -63,8 +65,11 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
     const t = setTimeout(() => {
       ;(async () => {
         try {
-          const qs = await fetchQuestions(answers)
-          if (!cancelled) setQuestions(qs)
+          const r = await fetchQuestions(answers)
+          if (!cancelled) {
+            setQuestions(r.questions as any)
+            setTerminalAlert(!!r.terminalAlert)
+          }
         } catch (err: any) {
           toast.error(err?.message || "Erreur lors du chargement des questions")
         }
@@ -80,6 +85,35 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
   const updateAnswer = (fieldKey: string, value: string | string[] | boolean | number) => {
     setAnswers((prev) => ({ ...prev, [fieldKey]: value }))
   }
+
+  React.useEffect(() => {
+    if (!terminalAlert) return
+    if (submitting) return
+
+    setSubmitting(true)
+
+    ;(async () => {
+      try {
+        const res = await fetch("/api/verification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ flowId, answers }),
+        })
+
+        const data = await res.json()
+
+        if (!res.ok) {
+          throw new Error(data?.error || "Erreur")
+        }
+
+        onEvaluated(data as FlowRunResultDTO)
+      } catch (err: any) {
+        toast.error(err?.message || "Erreur lors de l'évaluation")
+      } finally {
+        setSubmitting(false)
+      }
+    })()
+  }, [terminalAlert, submitting, flowId, answers, onEvaluated])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()

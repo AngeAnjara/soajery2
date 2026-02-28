@@ -190,6 +190,10 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
       return { resultNodeId: nodeId, title: node.data.title, description: node.data.description }
     }
 
+    if (node.type === "alert") {
+      return { resultNodeId: nodeId, title: "Avertissement", description: (node as any).data?.text || "" }
+    }
+
     return { nextNodeId: nodeId }
   }
 
@@ -258,6 +262,11 @@ function canEvaluateCondition(node: Extract<FlowNode, { type: "condition" }>, an
     const rules = data.rules as any[]
     if (!rules.length) return false
     return rules.every((r: any) => isAnswerProvided(answers[r.fieldKey]) && typeof r.value === "string" && r.value.trim() !== "")
+  }
+
+  const hasAnyRules = branches.some((b: any) => Array.isArray(b?.rules) && b.rules.length > 0)
+  if (!hasAnyRules) {
+    return true
   }
 
   return branches.some((b: any) => {

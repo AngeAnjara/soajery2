@@ -37,11 +37,16 @@ export type ResultNodeData = {
   description: string
 }
 
+export type AlertNodeData = {
+  text: string
+}
+
 export type FlowNode =
   | { id: string; type: "question"; position: { x: number; y: number }; data: QuestionNodeData }
   | { id: string; type: "condition"; position: { x: number; y: number }; data: ConditionNodeData }
   | { id: string; type: "action"; position: { x: number; y: number }; data: ActionNodeData }
   | { id: string; type: "result"; position: { x: number; y: number }; data: ResultNodeData }
+  | { id: string; type: "alert"; position: { x: number; y: number }; data: AlertNodeData }
 
 export type FlowEdge = {
   id: string

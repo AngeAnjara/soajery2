@@ -16,6 +16,8 @@ type Props = {
 export function VerificationSummary({ flow, result, onBack, onRequestPremium }: Props) {
   const isDetailed = result.actionType === "call_ai"
 
+  const isAlert = result.resultTitle === "Avertissement"
+
   const [aiLoading, setAiLoading] = React.useState(false)
   const [aiError, setAiError] = React.useState<string | null>(null)
   const [aiAnalysis, setAiAnalysis] = React.useState<any>(result.aiAnalysis || null)
@@ -100,9 +102,13 @@ export function VerificationSummary({ flow, result, onBack, onRequestPremium }: 
       <div className="space-y-2">
         <div className="text-sm font-medium">Résultat</div>
         <div className="space-y-1">
-          <div className="text-sm text-muted-foreground">{result.resultTitle || "Résultat"}</div>
+          <div className={isAlert ? "text-sm font-semibold text-red-700" : "text-sm text-muted-foreground"}>
+            {result.resultTitle || "Résultat"}
+          </div>
           {result.resultDescription ? (
-            <div className="text-sm text-muted-foreground">{result.resultDescription}</div>
+            <div className={isAlert ? "whitespace-pre-wrap text-sm text-red-600" : "text-sm text-muted-foreground"}>
+              {result.resultDescription}
+            </div>
           ) : null}
         </div>
       </div>

@@ -24,6 +24,7 @@ import { ConditionNode } from "@/components/admin/builder/ConditionNode"
 import { ActionNode } from "@/components/admin/builder/ActionNode"
 import { QuestionNode } from "@/components/admin/builder/QuestionNode"
 import { ResultNode } from "@/components/admin/builder/ResultNode"
+import { AlertNode } from "@/components/admin/builder/AlertNode"
 import { Button } from "@/components/ui/button"
 
 const nodeTypes = {
@@ -31,6 +32,7 @@ const nodeTypes = {
   conditionNode: ConditionNode,
   actionNode: ActionNode,
   resultNode: ResultNode,
+  alertNode: AlertNode,
 }
 
 export function VerificationFlowBuilder() {
@@ -108,7 +110,16 @@ export function VerificationFlowBuilder() {
       setRfNodes(
         nodes.map((n: any) => ({
           id: String(n.id),
-          type: n.type === "question" ? "questionNode" : n.type === "condition" ? "conditionNode" : n.type === "action" ? "actionNode" : "resultNode",
+          type:
+            n.type === "question"
+              ? "questionNode"
+              : n.type === "condition"
+                ? "conditionNode"
+                : n.type === "action"
+                  ? "actionNode"
+                  : n.type === "alert"
+                    ? "alertNode"
+                    : "resultNode",
           data:
             n.type === "condition"
               ? (() => {
@@ -271,8 +282,8 @@ export function VerificationFlowBuilder() {
 
       const allowed =
         (sourceKind === "questionNode" && (targetKind === "conditionNode" || targetKind === "questionNode")) ||
-        (sourceKind === "conditionNode" && (targetKind === "questionNode" || targetKind === "actionNode" || targetKind === "resultNode")) ||
-        (sourceKind === "actionNode" && targetKind === "resultNode")
+        (sourceKind === "conditionNode" && (targetKind === "questionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode")) ||
+        (sourceKind === "actionNode" && (targetKind === "resultNode" || targetKind === "alertNode"))
 
       if (!allowed) {
         toast.error("Connexion non autorisée")
@@ -534,6 +545,25 @@ export function VerificationFlowBuilder() {
           >
             + Result
           </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              if (!flowId) return
+              const id = createNodeId("n")
+              const node: Node = {
+                id,
+                type: "alertNode",
+                data: { text: "" },
+                position: { x: 980, y: 140 },
+              }
+              setRfNodes((prev) => [...prev, node])
+              setIsDirty(true)
+            }}
+            disabled={!flowId}
+          >
+            + Alert
+          </Button>
           <Button type="button" size="sm" onClick={() => openCreate("flow")}>
             + Flow
           </Button>
@@ -638,7 +668,14 @@ export function VerificationFlowBuilder() {
 
                     return {
                       id: String(n.id),
-                      type: n.type === "questionNode" ? "question" : n.type === "actionNode" ? "action" : "result",
+                      type:
+                        n.type === "questionNode"
+                          ? "question"
+                          : n.type === "actionNode"
+                            ? "action"
+                            : n.type === "alertNode"
+                              ? "alert"
+                              : "result",
                       position: n.position,
                       data: n.data,
                     }
@@ -1098,6 +1135,7 @@ export function VerificationFlowBuilder() {
                 <option value="conditionNode">condition</option>
                 <option value="actionNode">action</option>
                 <option value="resultNode">result</option>
+                <option value="alertNode">alert</option>
               </select>
             </div>
 
@@ -1413,6 +1451,19 @@ export function VerificationFlowBuilder() {
                   <textarea
                     value={nodeForm.data?.description || ""}
                     onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), description: e.target.value } }))}
+                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {String(nodeForm.type || "") === "alertNode" ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Texte (rouge)</label>
+                  <textarea
+                    value={nodeForm.data?.text || ""}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), text: e.target.value } }))}
                     className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
                   />
                 </div>

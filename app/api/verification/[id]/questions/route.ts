@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { handleApiError } from "@/lib/apiError"
 import { connectDB } from "@/lib/mongodb"
 import { VerificationFlow } from "@/models"
-import { getVisibleQuestionSequence } from "@/services/flowRunner"
+import { getVisibleQuestionSequence, runFlow } from "@/services/flowRunner"
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -15,18 +15,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    const questions = getVisibleQuestionSequence(
-      {
+    const flowDef = {
       nodes: (flow as any).nodes || [],
       edges: (flow as any).edges || [],
       version: Number((flow as any).version || 1),
       status: ((flow as any).status || "draft") as any,
       startNodeId: String((flow as any).startNodeId || ""),
-      },
-      {},
-    )
+    }
 
-    return NextResponse.json({ questions })
+    const questions = getVisibleQuestionSequence(flowDef as any, {})
+    const run = runFlow(flowDef as any, {})
+    const terminalAlert = run.title === "Avertissement"
+
+    return NextResponse.json({ questions, terminalAlert })
   } catch (error) {
     return handleApiError(error)
   }
@@ -45,18 +46,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    const questions = getVisibleQuestionSequence(
-      {
-        nodes: (flow as any).nodes || [],
-        edges: (flow as any).edges || [],
-        version: Number((flow as any).version || 1),
-        status: ((flow as any).status || "draft") as any,
-        startNodeId: String((flow as any).startNodeId || ""),
-      },
-      answers,
-    )
+    const flowDef = {
+      nodes: (flow as any).nodes || [],
+      edges: (flow as any).edges || [],
+      version: Number((flow as any).version || 1),
+      status: ((flow as any).status || "draft") as any,
+      startNodeId: String((flow as any).startNodeId || ""),
+    }
 
-    return NextResponse.json({ questions })
+    const questions = getVisibleQuestionSequence(flowDef as any, answers)
+    const run = runFlow(flowDef as any, answers)
+    const terminalAlert = run.title === "Avertissement"
+
+    return NextResponse.json({ questions, terminalAlert })
   } catch (error) {
     return handleApiError(error)
   }

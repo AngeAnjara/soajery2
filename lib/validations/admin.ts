@@ -106,6 +106,14 @@ const flowSchemaObject = z.object({
           description: z.string(),
         }),
       }),
+      z.object({
+        id: z.string().min(1),
+        type: z.literal("alert"),
+        position: z.object({ x: z.number(), y: z.number() }),
+        data: z.object({
+          text: z.string().min(1),
+        }),
+      }),
     ]),
   ),
   edges: z.array(
