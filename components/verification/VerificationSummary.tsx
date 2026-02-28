@@ -21,6 +21,7 @@ export function VerificationSummary({ flow, result, onBack, onRequestPremium }: 
   const [aiLoading, setAiLoading] = React.useState(false)
   const [aiError, setAiError] = React.useState<string | null>(null)
   const [aiAnalysis, setAiAnalysis] = React.useState<any>(result.aiAnalysis || null)
+  const aiRequestedRef = React.useRef(false)
 
   const generateAiSummary = async () => {
     try {
@@ -39,6 +40,17 @@ export function VerificationSummary({ flow, result, onBack, onRequestPremium }: 
     }
   }
 
+  React.useEffect(() => {
+    if (!isDetailed) return
+    if (aiRequestedRef.current) return
+    if (aiLoading) return
+    if (aiAnalysis) return
+
+    aiRequestedRef.current = true
+    generateAiSummary()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDetailed, result.resultId])
+
   return (
     <div className="space-y-4 rounded-xl border bg-card p-6">
       <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
@@ -51,53 +63,52 @@ export function VerificationSummary({ flow, result, onBack, onRequestPremium }: 
         </Button>
       </div>
 
-      <div className="space-y-3 rounded-lg border bg-background p-4">
-        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+      {isDetailed ? (
+        <div className="space-y-3 rounded-lg border bg-background p-4">
           <div>
             <div className="text-sm font-semibold">Résumé & analyse (IA)</div>
             <div className="text-xs text-muted-foreground">Génère un résumé complet et une analyse via Together AI (Llama).</div>
           </div>
-          <Button type="button" variant="outline" onClick={generateAiSummary} disabled={aiLoading}>
-            {aiLoading ? "Génération..." : aiAnalysis ? "Régénérer" : "Générer"}
-          </Button>
+
+          {aiError ? <div className="text-sm text-destructive">{aiError}</div> : null}
+
+          {aiLoading ? <div className="text-sm text-muted-foreground">Génération...</div> : null}
+
+          {aiAnalysis ? (
+            <div className="space-y-3">
+              {aiAnalysis.summary ? (
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">Résumé</div>
+                  <div className="text-sm text-muted-foreground">{aiAnalysis.summary}</div>
+                </div>
+              ) : null}
+
+              {aiAnalysis.analysis ? (
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">Analyse</div>
+                  <div className="whitespace-pre-wrap text-sm text-muted-foreground">{aiAnalysis.analysis}</div>
+                </div>
+              ) : null}
+
+              {aiAnalysis.recommendation ? (
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">Recommandation</div>
+                  <div className="whitespace-pre-wrap text-sm text-muted-foreground">{aiAnalysis.recommendation}</div>
+                </div>
+              ) : null}
+
+              {aiAnalysis.confidence ? (
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">Niveau de confiance</div>
+                  <div className="text-sm text-muted-foreground">{aiAnalysis.confidence}</div>
+                </div>
+              ) : null}
+            </div>
+          ) : aiLoading ? null : aiError ? null : (
+            <div className="text-sm text-muted-foreground">Génération en cours...</div>
+          )}
         </div>
-
-        {aiError ? <div className="text-sm text-destructive">{aiError}</div> : null}
-
-        {aiAnalysis ? (
-          <div className="space-y-3">
-            {aiAnalysis.summary ? (
-              <div className="space-y-1">
-                <div className="text-xs font-medium text-muted-foreground">Résumé</div>
-                <div className="text-sm text-muted-foreground">{aiAnalysis.summary}</div>
-              </div>
-            ) : null}
-
-            {aiAnalysis.analysis ? (
-              <div className="space-y-1">
-                <div className="text-xs font-medium text-muted-foreground">Analyse</div>
-                <div className="whitespace-pre-wrap text-sm text-muted-foreground">{aiAnalysis.analysis}</div>
-              </div>
-            ) : null}
-
-            {aiAnalysis.recommendation ? (
-              <div className="space-y-1">
-                <div className="text-xs font-medium text-muted-foreground">Recommandation</div>
-                <div className="whitespace-pre-wrap text-sm text-muted-foreground">{aiAnalysis.recommendation}</div>
-              </div>
-            ) : null}
-
-            {aiAnalysis.confidence ? (
-              <div className="space-y-1">
-                <div className="text-xs font-medium text-muted-foreground">Niveau de confiance</div>
-                <div className="text-sm text-muted-foreground">{aiAnalysis.confidence}</div>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="text-sm text-muted-foreground">Clique sur “Générer” pour afficher le résumé IA.</div>
-        )}
-      </div>
+      ) : null}
 
       <div className="space-y-2">
         <div className="text-sm font-medium">Résultat</div>
