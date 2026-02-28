@@ -39,6 +39,7 @@ export type ResultNodeData = {
 
 export type AlertNodeData = {
   text: string
+  color?: "red" | "green"
 }
 
 export type FlowNode =
@@ -71,6 +72,8 @@ export type FlowRunResultDTO = {
   actionType?: string
   prompt?: string
   aiAnalysis?: any
+  resultType?: "result" | "alert"
+  resultColor?: "red" | "green"
   resultTitle?: string
   resultDescription?: string
 }

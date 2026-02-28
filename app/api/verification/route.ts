@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
       actionType: run.actionType,
       prompt: run.actionType === "call_ai" ? run.prompt : undefined,
       aiAnalysis: (result as any).aiAnalysis,
+      resultType: run.resultType,
+      resultColor: run.resultColor,
       resultTitle: run.title,
       resultDescription: run.description,
     })

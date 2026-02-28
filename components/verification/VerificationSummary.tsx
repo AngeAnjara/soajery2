@@ -16,7 +16,8 @@ type Props = {
 export function VerificationSummary({ flow, result, onBack, onRequestPremium }: Props) {
   const isDetailed = result.actionType === "call_ai"
 
-  const isAlert = result.resultTitle === "Avertissement"
+  const isAlert = result.resultType === "alert"
+  const alertColor = result.resultColor === "green" ? "green" : "red"
 
   const [aiLoading, setAiLoading] = React.useState(false)
   const [aiError, setAiError] = React.useState<string | null>(null)
@@ -113,11 +114,27 @@ export function VerificationSummary({ flow, result, onBack, onRequestPremium }: 
       <div className="space-y-2">
         <div className="text-sm font-medium">Résultat</div>
         <div className="space-y-1">
-          <div className={isAlert ? "text-sm font-semibold text-red-700" : "text-sm text-muted-foreground"}>
+          <div
+            className={
+              isAlert
+                ? alertColor === "green"
+                  ? "text-sm font-semibold text-green-700"
+                  : "text-sm font-semibold text-red-700"
+                : "text-sm text-muted-foreground"
+            }
+          >
             {result.resultTitle || "Résultat"}
           </div>
           {result.resultDescription ? (
-            <div className={isAlert ? "whitespace-pre-wrap text-sm text-red-600" : "text-sm text-muted-foreground"}>
+            <div
+              className={
+                isAlert
+                  ? alertColor === "green"
+                    ? "whitespace-pre-wrap text-sm text-green-600"
+                    : "whitespace-pre-wrap text-sm text-red-600"
+                  : "text-sm text-muted-foreground"
+              }
+            >
               {result.resultDescription}
             </div>
           ) : null}

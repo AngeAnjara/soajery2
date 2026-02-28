@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     const questions = getVisibleQuestionSequence(flowDef as any, {})
     const run = runFlow(flowDef as any, {})
-    const terminalAlert = run.title === "Avertissement"
+    const terminalAlert = run.resultType === "alert"
 
     return NextResponse.json({ questions, terminalAlert })
   } catch (error) {
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const questions = getVisibleQuestionSequence(flowDef as any, answers)
     const run = runFlow(flowDef as any, answers)
-    const terminalAlert = run.title === "Avertissement"
+    const terminalAlert = run.resultType === "alert"
 
     return NextResponse.json({ questions, terminalAlert })
   } catch (error) {

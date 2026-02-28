@@ -554,7 +554,7 @@ export function VerificationFlowBuilder() {
               const node: Node = {
                 id,
                 type: "alertNode",
-                data: { text: "" },
+                data: { text: "", color: "red" },
                 position: { x: 980, y: 140 },
               }
               setRfNodes((prev) => [...prev, node])
@@ -1466,6 +1466,18 @@ export function VerificationFlowBuilder() {
                     onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), text: e.target.value } }))}
                     className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
                   />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Couleur</label>
+                  <select
+                    value={String(nodeForm.data?.color || "red")}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), color: e.target.value } }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="red">red</option>
+                    <option value="green">green</option>
+                  </select>
                 </div>
               </div>
             ) : null}

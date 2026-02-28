@@ -112,6 +112,7 @@ const flowSchemaObject = z.object({
         position: z.object({ x: z.number(), y: z.number() }),
         data: z.object({
           text: z.string().min(1),
+          color: z.enum(["red", "green"]).optional(),
         }),
       }),
     ]),

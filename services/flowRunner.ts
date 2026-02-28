@@ -121,6 +121,8 @@ export type FlowRunResult = {
   actionType?: "call_ai" | "show_result" | "redirect"
   prompt?: string
   resultNodeId?: string
+  resultType?: "result" | "alert"
+  resultColor?: "red" | "green"
   title?: string
   description?: string
 }
@@ -176,7 +178,23 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
 
         const nextNode = getNode(flow, next)
         if (nextNode?.type === "result") {
-          return { resultNodeId: nextNode.id, title: nextNode.data.title, description: nextNode.data.description }
+          return {
+            resultNodeId: nextNode.id,
+            resultType: "result",
+            title: nextNode.data.title,
+            description: nextNode.data.description,
+          }
+        }
+
+        if (nextNode?.type === "alert") {
+          const color = (nextNode as any).data?.color === "green" ? "green" : "red"
+          return {
+            resultNodeId: nextNode.id,
+            resultType: "alert",
+            resultColor: color,
+            title: "Avertissement",
+            description: (nextNode as any).data?.text || "",
+          }
         }
 
         currentNodeId = next
@@ -187,11 +205,18 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
     }
 
     if (node.type === "result") {
-      return { resultNodeId: nodeId, title: node.data.title, description: node.data.description }
+      return { resultNodeId: nodeId, resultType: "result", title: node.data.title, description: node.data.description }
     }
 
     if (node.type === "alert") {
-      return { resultNodeId: nodeId, title: "Avertissement", description: (node as any).data?.text || "" }
+      const color = (node as any).data?.color === "green" ? "green" : "red"
+      return {
+        resultNodeId: nodeId,
+        resultType: "alert",
+        resultColor: color,
+        title: "Avertissement",
+        description: (node as any).data?.text || "",
+      }
     }
 
     return { nextNodeId: nodeId }

@@ -95,6 +95,8 @@ export type FlowRunResultDTO = {
   actionType?: string
   prompt?: string
   aiAnalysis?: any
+  resultType?: "result" | "alert"
+  resultColor?: "red" | "green"
   resultTitle?: string
   resultDescription?: string
 }
