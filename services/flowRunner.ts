@@ -127,6 +127,10 @@ export type FlowRunResult = {
   description?: string
 }
 
+export type FlowPreRunResult = FlowRunResult & {
+  blockedOnQuestionId?: string
+}
+
 export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRunResult {
   let currentNodeId = flow.startNodeId
   const visited = new Set<string>()
@@ -217,6 +221,79 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
         title: "Avertissement",
         description: (node as any).data?.text || "",
       }
+    }
+
+    return { nextNodeId: nodeId }
+  }
+
+  return {}
+}
+
+export function preRunFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowPreRunResult {
+  let currentNodeId = flow.startNodeId
+  const visited = new Set<string>()
+
+  while (currentNodeId) {
+    if (visited.has(currentNodeId)) return { nextNodeId: currentNodeId }
+    visited.add(currentNodeId)
+
+    const node = getNode(flow, currentNodeId)
+    if (!node) return { nextNodeId: currentNodeId }
+
+    const nodeId = node.id
+
+    if (node.type === "question") {
+      const key = (node as any).data?.fieldKey
+      if (!isAnswerProvided((userAnswers as any)?.[key])) {
+        return { nextNodeId: nodeId, blockedOnQuestionId: nodeId }
+      }
+      const next = pickSingleOutgoingTarget(flow, nodeId)
+      if (!next) return { nextNodeId: nodeId }
+      currentNodeId = next
+      continue
+    }
+
+    if (node.type === "condition") {
+      if (!canEvaluateCondition(node as any, userAnswers)) {
+        return { nextNodeId: nodeId }
+      }
+      const branchKey = evaluateConditionNode(node as any, userAnswers)
+      const edges = getOutgoingEdges(flow, nodeId)
+      const chosen = edges.find((e) => edgeBranchKey(e) === String(branchKey)) || edges.find((e) => !edgeBranchKey(e))
+      if (!chosen?.target) return { nextNodeId: nodeId }
+      currentNodeId = chosen.target
+      continue
+    }
+
+    if (node.type === "action") {
+      if ((node as any).data?.actionType === "show_result") {
+        const next = pickSingleOutgoingTarget(flow, nodeId)
+        if (!next) return { actionType: "show_result", nextNodeId: nodeId }
+        const nextNode = getNode(flow, next)
+        if (nextNode?.type === "result") {
+          return { resultNodeId: nextNode.id, resultType: "result", title: (nextNode as any).data?.title, description: (nextNode as any).data?.description }
+        }
+        if (nextNode?.type === "alert") {
+          const color = (nextNode as any).data?.color === "green" ? "green" : "red"
+          return { resultNodeId: nextNode.id, resultType: "alert", resultColor: color, title: "Avertissement", description: (nextNode as any).data?.text || "" }
+        }
+        currentNodeId = next
+        continue
+      }
+
+      const next = pickSingleOutgoingTarget(flow, nodeId)
+      if (!next) return { nextNodeId: nodeId }
+      currentNodeId = next
+      continue
+    }
+
+    if (node.type === "result") {
+      return { resultNodeId: nodeId, resultType: "result", title: (node as any).data?.title, description: (node as any).data?.description }
+    }
+
+    if (node.type === "alert") {
+      const color = (node as any).data?.color === "green" ? "green" : "red"
+      return { resultNodeId: nodeId, resultType: "alert", resultColor: color, title: "Avertissement", description: (node as any).data?.text || "" }
     }
 
     return { nextNodeId: nodeId }
@@ -338,6 +415,10 @@ export function getVisibleQuestionSequence(flow: FlowDefinition, answers: UserAn
       if (!next) break
       currentNodeId = next
       continue
+    }
+
+    if (node.type === "alert") {
+      break
     }
 
     break

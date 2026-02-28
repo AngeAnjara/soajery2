@@ -19,19 +19,42 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
   const [loading, setLoading] = React.useState(true)
   const [submitting, setSubmitting] = React.useState(false)
   const [terminalAlert, setTerminalAlert] = React.useState(false)
+  const [preview, setPreview] = React.useState<Pick<
+    FlowRunResultDTO,
+    "resultType" | "resultColor" | "resultTitle" | "resultDescription"
+  > | null>(null)
+  const [autoSubmitError, setAutoSubmitError] = React.useState<string | null>(null)
+
+  const fetchControllerRef = React.useRef<AbortController | null>(null)
+  const evalControllerRef = React.useRef<AbortController | null>(null)
+  const autoSubmitKeyRef = React.useRef<string>("")
 
   const fetchQuestions = React.useCallback(
     async (nextAnswers: Record<string, string | string[] | boolean | number>) => {
+      fetchControllerRef.current?.abort()
+      const controller = new AbortController()
+      fetchControllerRef.current = controller
+
       const res = await fetch(`/api/verification/${flowId}/questions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ answers: nextAnswers }),
+        signal: controller.signal,
       })
       const data = await res.json()
       if (!res.ok) {
         throw new Error(data?.error || "Erreur")
       }
-      return { questions: (data?.questions || []) as any[], terminalAlert: !!data?.terminalAlert }
+      return {
+        questions: (data?.questions || []) as any[],
+        terminalAlert: !!data?.terminalAlert,
+        preview: {
+          resultType: data?.resultType,
+          resultColor: data?.resultColor,
+          resultTitle: data?.resultTitle,
+          resultDescription: data?.resultDescription,
+        } as any,
+      }
     },
     [flowId],
   )
@@ -45,9 +68,12 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
           const r = await fetchQuestions({})
           setQuestions(r.questions as any)
           setTerminalAlert(!!r.terminalAlert)
+          setPreview(r.preview || null)
         }
       } catch (err: any) {
-        toast.error(err?.message || "Erreur lors du chargement des questions")
+        if (err?.name !== "AbortError") {
+          toast.error(err?.message || "Erreur lors du chargement des questions")
+        }
       } finally {
         if (mounted) {
           setLoading(false)
@@ -57,6 +83,8 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
 
     return () => {
       mounted = false
+      fetchControllerRef.current?.abort()
+      evalControllerRef.current?.abort()
     }
   }, [flowId])
 
@@ -69,9 +97,12 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
           if (!cancelled) {
             setQuestions(r.questions as any)
             setTerminalAlert(!!r.terminalAlert)
+            setPreview(r.preview || null)
           }
         } catch (err: any) {
-          toast.error(err?.message || "Erreur lors du chargement des questions")
+          if (err?.name !== "AbortError") {
+            toast.error(err?.message || "Erreur lors du chargement des questions")
+          }
         }
       })()
     }, 200)
@@ -89,8 +120,17 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
   React.useEffect(() => {
     if (!terminalAlert) return
     if (submitting) return
+    if (autoSubmitError) return
+
+    const key = JSON.stringify({ flowId, answers, t: preview?.resultType, id: (preview as any)?.resultNodeId })
+    if (autoSubmitKeyRef.current === key) return
+    autoSubmitKeyRef.current = key
 
     setSubmitting(true)
+
+    evalControllerRef.current?.abort()
+    const controller = new AbortController()
+    evalControllerRef.current = controller
 
     ;(async () => {
       try {
@@ -98,6 +138,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ flowId, answers }),
+          signal: controller.signal,
         })
 
         const data = await res.json()
@@ -108,12 +149,16 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
 
         onEvaluated(data as FlowRunResultDTO)
       } catch (err: any) {
-        toast.error(err?.message || "Erreur lors de l'évaluation")
+        if (err?.name !== "AbortError") {
+          const msg = err?.message || "Erreur lors de l'évaluation"
+          setAutoSubmitError(msg)
+          toast.error(msg)
+        }
       } finally {
         setSubmitting(false)
       }
     })()
-  }, [terminalAlert, submitting, flowId, answers, onEvaluated])
+  }, [terminalAlert, submitting, autoSubmitError, flowId, answers, onEvaluated, preview])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -276,6 +321,36 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
           )
         })}
       </div>
+
+      {preview?.resultType === "alert" && preview.resultDescription ? (
+        <div className="rounded-lg border p-4">
+          <div
+            className={
+              preview.resultColor === "green" ? "text-sm font-semibold text-green-700" : "text-sm font-semibold text-red-700"
+            }
+          >
+            {preview.resultTitle || "Avertissement"}
+          </div>
+          <div
+            className={
+              preview.resultColor === "green" ? "mt-1 whitespace-pre-wrap text-sm text-green-600" : "mt-1 whitespace-pre-wrap text-sm text-red-600"
+            }
+          >
+            {preview.resultDescription}
+          </div>
+        </div>
+      ) : null}
+
+      {autoSubmitError ? (
+        <div className="text-sm text-destructive">
+          {autoSubmitError}
+          <div className="mt-2">
+            <Button type="submit" variant="outline" disabled={submitting}>
+              Relancer l'analyse
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <Button type="submit" disabled={submitting}>
         {submitting ? "Analyse en cours..." : "Analyser"}

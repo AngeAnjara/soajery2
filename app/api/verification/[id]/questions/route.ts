@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { handleApiError } from "@/lib/apiError"
 import { connectDB } from "@/lib/mongodb"
 import { VerificationFlow } from "@/models"
-import { getVisibleQuestionSequence, runFlow } from "@/services/flowRunner"
+import { getVisibleQuestionSequence, preRunFlow } from "@/services/flowRunner"
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -24,10 +24,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const questions = getVisibleQuestionSequence(flowDef as any, {})
-    const run = runFlow(flowDef as any, {})
-    const terminalAlert = run.resultType === "alert"
+    const preview = preRunFlow(flowDef as any, {})
+    const terminalAlert = preview.resultType === "alert"
 
-    return NextResponse.json({ questions, terminalAlert })
+    return NextResponse.json({
+      questions,
+      terminalAlert,
+      resultType: preview.resultType,
+      resultColor: preview.resultColor,
+      resultTitle: preview.title,
+      resultDescription: preview.description,
+    })
   } catch (error) {
     return handleApiError(error)
   }
@@ -55,10 +62,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const questions = getVisibleQuestionSequence(flowDef as any, answers)
-    const run = runFlow(flowDef as any, answers)
-    const terminalAlert = run.resultType === "alert"
+    const preview = preRunFlow(flowDef as any, answers)
+    const terminalAlert = preview.resultType === "alert"
 
-    return NextResponse.json({ questions, terminalAlert })
+    return NextResponse.json({
+      questions,
+      terminalAlert,
+      resultType: preview.resultType,
+      resultColor: preview.resultColor,
+      resultTitle: preview.title,
+      resultDescription: preview.description,
+    })
   } catch (error) {
     return handleApiError(error)
   }
