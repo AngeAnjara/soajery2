@@ -19,8 +19,12 @@ export type ConditionRule = {
 }
 
 export type ConditionNodeData = {
-  logic: "AND" | "OR"
-  rules: ConditionRule[]
+  branches?: {
+    key: string
+    logic: "AND" | "OR"
+    rules: ConditionRule[]
+  }[]
+  fallbackBranchKey?: string
 }
 
 export type ActionNodeData = {
@@ -43,7 +47,7 @@ export type FlowEdge = {
   id: string
   source: string
   target: string
-  sourceHandle?: "true" | "false"
+  branchKey?: string
 }
 
 export type FlowDefinition = {

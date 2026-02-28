@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 
 import { ApiError, handleApiError } from "@/lib/apiError"
 import { connectDB } from "@/lib/mongodb"
-import { createFlowSchema } from "@/lib/validations/admin"
+import { patchFlowSchema } from "@/lib/validations/admin"
 import { requireAdmin } from "@/middlewares/authMiddleware"
 import { VerificationFlow } from "@/models"
 
@@ -12,7 +12,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     requireAdmin(req)
     const { id } = await params
     const body = sanitize(await req.json())
-    const parsed = createFlowSchema.partial().parse(body)
+    const parsed = patchFlowSchema.parse(body)
 
     await connectDB()
 

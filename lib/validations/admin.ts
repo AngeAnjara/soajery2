@@ -41,7 +41,7 @@ export const createNewsSchema = z.object({
   facebookUrl: z.string().min(1),
 })
 
-export const createFlowSchema = z.object({
+const flowSchemaObject = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   priceForDetailedReport: z.number(),
@@ -54,7 +54,7 @@ export const createFlowSchema = z.object({
         data: z.object({
           label: z.string().min(1),
           fieldKey: z.string().min(1),
-          inputType: z.enum(["boolean", "select", "text", "number"]),
+          inputType: z.enum(["boolean", "select", "multi_select", "text", "number"]),
           options: z.array(z.string()).optional(),
           aiMetadata: z
             .object({
@@ -70,14 +70,22 @@ export const createFlowSchema = z.object({
         type: z.literal("condition"),
         position: z.object({ x: z.number(), y: z.number() }),
         data: z.object({
-          logic: z.enum(["AND", "OR"]),
-          rules: z.array(
-            z.object({
-              fieldKey: z.string().min(1),
-              operator: z.enum(["equals", "not_equals", "greater_than", "less_than", "includes"]),
-              value: z.string().min(1),
-            }),
-          ),
+          branches: z
+            .array(
+              z.object({
+                key: z.string().min(1),
+                logic: z.enum(["AND", "OR"]),
+                rules: z.array(
+                  z.object({
+                    fieldKey: z.string().min(1),
+                    operator: z.enum(["equals", "not_equals", "greater_than", "less_than", "includes"]),
+                    value: z.string().min(1),
+                  }),
+                ),
+              }),
+            )
+            .optional(),
+          fallbackBranchKey: z.string().min(1).optional(),
         }),
       }),
       z.object({
@@ -105,10 +113,96 @@ export const createFlowSchema = z.object({
       id: z.string().min(1),
       source: z.string().min(1),
       target: z.string().min(1),
-      sourceHandle: z.enum(["true", "false"]).optional(),
+      branchKey: z.string().min(1).optional(),
     }),
   ),
   startNodeId: z.string().min(1),
   version: z.number().optional(),
   status: z.enum(["draft", "published"]).optional(),
+})
+
+export const createFlowSchema = flowSchemaObject.superRefine((val, ctx) => {
+  const nodes = Array.isArray(val.nodes) ? val.nodes : []
+  const edges = Array.isArray(val.edges) ? val.edges : []
+
+  const nodeTypeById = new Map<string, string>()
+  nodes.forEach((n: any) => nodeTypeById.set(String(n.id), String(n.type)))
+
+  const outgoingBySource = new Map<string, number>()
+  const branchPairs = new Set<string>()
+
+  for (const e of edges as any[]) {
+    const source = String(e.source)
+    const rawKey = typeof e.branchKey === "string" ? e.branchKey.trim() : ""
+    const key = rawKey || "__default__"
+
+    outgoingBySource.set(source, (outgoingBySource.get(source) || 0) + 1)
+
+    const pair = `${source}::${key}`
+    if (branchPairs.has(pair)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Ambiguous routing: duplicate outgoing branch '${key === "__default__" ? "default" : key}' for source '${source}'.`,
+        path: ["edges"],
+      })
+    } else {
+      branchPairs.add(pair)
+    }
+  }
+
+  for (const [source, count] of outgoingBySource.entries()) {
+    const t = nodeTypeById.get(source)
+    if (t === "question" || t === "action") {
+      if (count > 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Invalid graph: node '${source}' of type '${t}' must have at most 1 outgoing edge (found ${count}).`,
+          path: ["edges"],
+        })
+      }
+    }
+  }
+})
+
+export const patchFlowSchema = flowSchemaObject.partial().superRefine((val, ctx) => {
+  const nodes = Array.isArray((val as any).nodes) ? (val as any).nodes : []
+  const edges = Array.isArray((val as any).edges) ? (val as any).edges : []
+
+  const nodeTypeById = new Map<string, string>()
+  nodes.forEach((n: any) => nodeTypeById.set(String(n.id), String(n.type)))
+
+  const outgoingBySource = new Map<string, number>()
+  const branchPairs = new Set<string>()
+
+  for (const e of edges as any[]) {
+    const source = String(e.source)
+    const rawKey = typeof e.branchKey === "string" ? e.branchKey.trim() : ""
+    const key = rawKey || "__default__"
+
+    outgoingBySource.set(source, (outgoingBySource.get(source) || 0) + 1)
+
+    const pair = `${source}::${key}`
+    if (branchPairs.has(pair)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Ambiguous routing: duplicate outgoing branch '${key === "__default__" ? "default" : key}' for source '${source}'.`,
+        path: ["edges"],
+      })
+    } else {
+      branchPairs.add(pair)
+    }
+  }
+
+  for (const [source, count] of outgoingBySource.entries()) {
+    const t = nodeTypeById.get(source)
+    if (t === "question" || t === "action") {
+      if (count > 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Invalid graph: node '${source}' of type '${t}' must have at most 1 outgoing edge (found ${count}).`,
+          path: ["edges"],
+        })
+      }
+    }
+  }
 })

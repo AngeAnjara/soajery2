@@ -16,6 +16,17 @@ function getOutgoingEdges(flow: FlowDefinition, sourceId: string) {
   return flow.edges.filter((e) => e.source === sourceId)
 }
 
+function edgeBranchKey(e: any) {
+  const raw = typeof e?.branchKey === "string" ? e.branchKey : typeof e?.sourceHandle === "string" ? e.sourceHandle : ""
+  return String(raw || "").trim()
+}
+
+function pickSingleOutgoingTarget(flow: FlowDefinition, sourceId: string) {
+  const edges = getOutgoingEdges(flow, sourceId)
+  if (edges.length !== 1) return undefined
+  return edges[0]?.target
+}
+
 function coerceToNumber(value: unknown) {
   if (typeof value === "number") return value
   if (typeof value === "string" && value.trim() !== "") {
@@ -77,14 +88,32 @@ export function evaluateRule(rule: ConditionRule, answers: UserAnswers) {
 }
 
 export function evaluateConditionNode(node: Extract<FlowNode, { type: "condition" }>, answers: UserAnswers) {
-  const rules = Array.isArray(node.data?.rules) ? node.data.rules : []
-  const checks = rules.map((r) => evaluateRule(r, answers))
+  const data: any = node.data || {}
 
-  if (node.data.logic === "AND") {
-    return checks.every(Boolean)
+  const branches = Array.isArray(data?.branches) ? data.branches : []
+
+  if (!branches.length && Array.isArray(data?.rules)) {
+    const rules = data.rules as ConditionRule[]
+    const checks = rules.map((r) => evaluateRule(r, answers))
+    const logic = String(data?.logic || "AND") as "AND" | "OR"
+    const value = logic === "AND" ? checks.every(Boolean) : checks.some(Boolean)
+    return value ? "true" : "false"
   }
 
-  return checks.some(Boolean)
+  for (const b of branches) {
+    const key = String(b?.key || "").trim()
+    if (!key) continue
+
+    const rules = Array.isArray(b?.rules) ? b.rules : []
+    if (!rules.length) continue
+    const checks = rules.map((r: ConditionRule) => evaluateRule(r, answers))
+    const logic = String(b?.logic || "AND") as "AND" | "OR"
+    const ok = logic === "AND" ? checks.every(Boolean) : checks.some(Boolean)
+    if (ok) return key
+  }
+
+  const fallback = typeof data?.fallbackBranchKey === "string" ? data.fallbackBranchKey.trim() : ""
+  return fallback || "default"
 }
 
 export type FlowRunResult = {
@@ -114,17 +143,18 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
     const nodeId = node.id
 
     if (node.type === "question") {
-      const edges = getOutgoingEdges(flow, node.id)
-      const next = edges[0]?.target
+      const next = pickSingleOutgoingTarget(flow, node.id)
       if (!next) return { nextNodeId: node.id }
       currentNodeId = next
       continue
     }
 
     if (node.type === "condition") {
-      const value = evaluateConditionNode(node, userAnswers)
+      const branchKey = evaluateConditionNode(node, userAnswers)
       const edges = getOutgoingEdges(flow, node.id)
-      const chosen = edges.find((e) => e.sourceHandle === String(value) as FlowEdge["sourceHandle"]) || edges.find((e) => !e.sourceHandle)
+      const chosen =
+        edges.find((e) => edgeBranchKey(e) === String(branchKey)) ||
+        edges.find((e) => !edgeBranchKey(e))
       if (!chosen?.target) return { nextNodeId: node.id }
       currentNodeId = chosen.target
       continue
@@ -141,7 +171,16 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
       }
 
       if (node.data.actionType === "show_result") {
-        return { actionType: "show_result" }
+        const next = pickSingleOutgoingTarget(flow, node.id)
+        if (!next) return { actionType: "show_result", nextNodeId: node.id }
+
+        const nextNode = getNode(flow, next)
+        if (nextNode?.type === "result") {
+          return { resultNodeId: nextNode.id, title: nextNode.data.title, description: nextNode.data.description }
+        }
+
+        currentNodeId = next
+        continue
       }
 
       return { nextNodeId: nodeId }
@@ -171,7 +210,7 @@ export function getQuestionSequence(flow: FlowDefinition) {
 
     if (node.type === "question") {
       ordered.push(node)
-      const next = getOutgoingEdges(flow, node.id)[0]?.target
+      const next = pickSingleOutgoingTarget(flow, node.id)
       if (!next) break
       currentNodeId = next
       continue
@@ -179,14 +218,14 @@ export function getQuestionSequence(flow: FlowDefinition) {
 
     if (node.type === "condition") {
       const edges = getOutgoingEdges(flow, node.id)
-      const next = edges[0]?.target
+      const next = edges.find((e) => !edgeBranchKey(e))?.target
       if (!next) break
       currentNodeId = next
       continue
     }
 
     if (node.type === "action") {
-      const next = getOutgoingEdges(flow, node.id)[0]?.target
+      const next = pickSingleOutgoingTarget(flow, node.id)
       if (!next) break
       currentNodeId = next
       continue
@@ -212,9 +251,20 @@ function isAnswerProvided(value: unknown) {
 }
 
 function canEvaluateCondition(node: Extract<FlowNode, { type: "condition" }>, answers: UserAnswers) {
-  const rules = Array.isArray(node.data?.rules) ? node.data.rules : []
-  if (!rules.length) return false
-  return rules.every((r) => isAnswerProvided(answers[r.fieldKey]) && typeof r.value === "string" && r.value.trim() !== "")
+  const data: any = node.data || {}
+  const branches = Array.isArray(data?.branches) ? data.branches : []
+
+  if (!branches.length && Array.isArray(data?.rules)) {
+    const rules = data.rules as any[]
+    if (!rules.length) return false
+    return rules.every((r: any) => isAnswerProvided(answers[r.fieldKey]) && typeof r.value === "string" && r.value.trim() !== "")
+  }
+
+  return branches.some((b: any) => {
+    const rules = Array.isArray(b?.rules) ? b.rules : []
+    if (!rules.length) return false
+    return rules.every((r: any) => isAnswerProvided(answers[r.fieldKey]) && typeof r.value === "string" && r.value.trim() !== "")
+  })
 }
 
 export function getVisibleQuestionSequence(flow: FlowDefinition, answers: UserAnswers) {
@@ -235,7 +285,7 @@ export function getVisibleQuestionSequence(flow: FlowDefinition, answers: UserAn
       if (!isAnswerProvided(answers[key])) {
         break
       }
-      const next = getOutgoingEdges(flow, node.id)[0]?.target
+      const next = pickSingleOutgoingTarget(flow, node.id)
       if (!next) break
       currentNodeId = next
       continue
@@ -245,11 +295,11 @@ export function getVisibleQuestionSequence(flow: FlowDefinition, answers: UserAn
       if (!canEvaluateCondition(node, answers)) {
         break
       }
-      const value = evaluateConditionNode(node, answers)
+      const branchKey = evaluateConditionNode(node, answers)
       const edges = getOutgoingEdges(flow, node.id)
       const chosen =
-        edges.find((e) => e.sourceHandle === (String(value) as FlowEdge["sourceHandle"])) ||
-        edges.find((e) => !e.sourceHandle)
+        edges.find((e) => edgeBranchKey(e) === String(branchKey)) ||
+        edges.find((e) => !edgeBranchKey(e))
       const next = chosen?.target
       if (!next) break
       currentNodeId = next

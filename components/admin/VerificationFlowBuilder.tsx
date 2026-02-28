@@ -51,6 +51,7 @@ export function VerificationFlowBuilder() {
 
   const [flowForm, setFlowForm] = React.useState({ title: "", description: "", priceForDetailedReport: 0, status: "draft" as "draft" | "published" })
   const [nodeForm, setNodeForm] = React.useState<any>({})
+  const [nodeOptionsText, setNodeOptionsText] = React.useState<string>("")
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([])
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -108,7 +109,31 @@ export function VerificationFlowBuilder() {
         nodes.map((n: any) => ({
           id: String(n.id),
           type: n.type === "question" ? "questionNode" : n.type === "condition" ? "conditionNode" : n.type === "action" ? "actionNode" : "resultNode",
-          data: n.data || {},
+          data:
+            n.type === "condition"
+              ? (() => {
+                  const d = n.data || {}
+                  if (Array.isArray(d.branches)) return d
+                  if (Array.isArray(d.rules)) {
+                    return {
+                      branches: [
+                        { key: "true", logic: String(d.logic || "AND"), rules: d.rules },
+                        { key: "false", logic: "AND", rules: [] },
+                      ],
+                      fallbackBranchKey: "false",
+                    }
+                  }
+                  return {
+                    branches: [
+                      { key: "branch_1", logic: "AND", rules: [] },
+                      { key: "branch_2", logic: "AND", rules: [] },
+                      { key: "branch_3", logic: "AND", rules: [] },
+                      { key: "branch_4", logic: "AND", rules: [] },
+                    ],
+                    fallbackBranchKey: "default",
+                  }
+                })()
+              : n.data || {},
           position: n.position || { x: 0, y: 0 },
           style: String(n.id) === String(flow.startNodeId) ? { borderColor: "hsl(var(--primary))", borderWidth: 2 } : undefined,
         })),
@@ -116,10 +141,12 @@ export function VerificationFlowBuilder() {
 
       setRfEdges(
         edges.map((e: any) => ({
+          ...(e || {}),
           id: String(e.id),
           source: String(e.source),
           target: String(e.target),
-          sourceHandle: e.sourceHandle,
+          sourceHandle: String((e?.branchKey ?? e?.sourceHandle ?? "") || "") || undefined,
+          branchKey: String((e?.branchKey ?? e?.sourceHandle ?? "") || "") || undefined,
           type: "smoothstep",
           markerEnd: { type: MarkerType.ArrowClosed },
           style: { stroke: "hsl(var(--primary))" },
@@ -165,6 +192,8 @@ export function VerificationFlowBuilder() {
 
     if (e === "node") {
       setNodeForm(kind || {})
+      const opts = Array.isArray(kind?.data?.options) ? kind.data.options : []
+      setNodeOptionsText(opts.join("\n"))
     }
 
     setOpen(true)
@@ -219,6 +248,8 @@ export function VerificationFlowBuilder() {
 
     if (e === "node") {
       setNodeForm(row)
+      const opts = Array.isArray(row?.data?.options) ? row.data.options : []
+      setNodeOptionsText(opts.join("\n"))
     }
 
     setOpen(true)
@@ -272,20 +303,36 @@ export function VerificationFlowBuilder() {
         setRfNodes((prev) => {
           return prev.map((n) => {
             if (String(n.id) !== target) return n
-            const rules = Array.isArray((n as any)?.data?.rules) ? (n as any).data.rules : []
-            if (rules.some((r: any) => String(r?.fieldKey || "") === questionFieldKey)) return n
+            const branches = Array.isArray((n as any)?.data?.branches) ? (n as any).data.branches : []
+            const nextBranches = branches.length
+              ? [...branches]
+              : [
+                  { key: "branch_1", logic: "AND", rules: [] },
+                  { key: "branch_2", logic: "AND", rules: [] },
+                  { key: "branch_3", logic: "AND", rules: [] },
+                  { key: "branch_4", logic: "AND", rules: [] },
+                ]
+
+            const firstRules = Array.isArray(nextBranches?.[0]?.rules) ? nextBranches[0].rules : []
+            if (firstRules.some((r: any) => String(r?.fieldKey || "") === questionFieldKey)) return n
+
+            nextBranches[0] = {
+              ...(nextBranches[0] || { key: "branch_1", logic: "AND", rules: [] }),
+              rules: [
+                ...firstRules,
+                {
+                  fieldKey: questionFieldKey,
+                  operator: "equals",
+                  value: defaultValue,
+                },
+              ],
+            }
             return {
               ...n,
               data: {
                 ...(n as any).data,
-                rules: [
-                  ...rules,
-                  {
-                    fieldKey: questionFieldKey,
-                    operator: "equals",
-                    value: defaultValue,
-                  },
-                ],
+                branches: nextBranches,
+                fallbackBranchKey: (n as any).data?.fallbackBranchKey || "default",
               },
             }
           })
@@ -299,18 +346,48 @@ export function VerificationFlowBuilder() {
         }, 0)
       }
 
-      let sourceHandle: "true" | "false" | undefined = undefined
+      let branchKey: string | undefined = undefined
+      const edgeBranchKey = (e: any) => String(e?.branchKey ?? e?.sourceHandle ?? "").trim()
+
       if (sourceKind === "conditionNode") {
-        const choice = window.prompt("Choisir la sortie: true / false", "true")
-        if (choice !== "true" && choice !== "false") {
-          toast.error("Choix invalide")
+        const fromHandle = String(connection.sourceHandle || "").trim()
+        if (fromHandle) {
+          branchKey = fromHandle
+        }
+        const branchKeys = Array.isArray((sourceNode as any)?.data?.branches)
+          ? (sourceNode as any).data.branches.map((b: any) => String(b?.key || "").trim()).filter(Boolean)
+          : []
+        const hint = branchKeys.length ? `Ex: ${branchKeys.slice(0, 4).join(", ")}` : "Ex: branch_1"
+        if (!branchKey) {
+          const choice = window.prompt(`Branch key (${hint})`, branchKeys[0] || "branch_1")
+          const key = String(choice || "").trim()
+          if (!key) {
+            toast.error("Branch key requis")
+            return
+          }
+          branchKey = key
+        }
+      }
+
+      if (sourceKind === "questionNode" || sourceKind === "actionNode") {
+        const existing = rfEdges.filter((e) => String(e.source) === source)
+        if (existing.length >= 1) {
+          toast.error("Ce node doit avoir une seule sortie")
           return
         }
-        sourceHandle = choice
+      }
+
+      if (sourceKind === "conditionNode") {
+        const key = branchKey || "__default__"
+        const exists = rfEdges.some((e) => String(e.source) === source && edgeBranchKey(e) === (key === "__default__" ? "" : key))
+        if (exists) {
+          toast.error("Connexion déjà utilisée pour ce branch")
+          return
+        }
       }
 
       setRfEdges((prev) => {
-        const id = `e:${source}->${target}:${sourceHandle || "_"}`
+        const id = `e:${source}->${target}:${branchKey || "_"}`
         if (prev.some((e) => String(e.id) === id)) return prev
         return [
           ...prev,
@@ -318,7 +395,8 @@ export function VerificationFlowBuilder() {
             id,
             source,
             target,
-            sourceHandle,
+            sourceHandle: branchKey,
+            branchKey,
             type: "smoothstep",
             markerEnd: { type: MarkerType.ArrowClosed },
             style: { stroke: "hsl(var(--primary))" },
@@ -400,7 +478,15 @@ export function VerificationFlowBuilder() {
               const node: Node = {
                 id,
                 type: "conditionNode",
-                data: { logic: "AND", rules: [] },
+                data: {
+                  branches: [
+                    { key: "branch_1", logic: "AND", rules: [] },
+                    { key: "branch_2", logic: "AND", rules: [] },
+                    { key: "branch_3", logic: "AND", rules: [] },
+                    { key: "branch_4", logic: "AND", rules: [] },
+                  ],
+                  fallbackBranchKey: "default",
+                },
                 position: { x: 380, y: 40 },
               }
               setRfNodes((prev) => [...prev, node])
@@ -498,26 +584,46 @@ export function VerificationFlowBuilder() {
                   nodes: rfNodes.map((n) => {
                     if (n.type === "conditionNode") {
                       const inferred = inferConditionFieldKey(String(n.id))
-                      const rules = Array.isArray((n as any)?.data?.rules) ? (n as any).data.rules : []
-                      const hadInvalidRule = rules.some((r: any) => !String(r?.value ?? "").trim())
-                      if (hadInvalidRule) {
-                        throw new Error("Complétez toutes les règles de condition (value requis)")
+                      const branches = Array.isArray((n as any)?.data?.branches) ? (n as any).data.branches : []
+
+                      if (!branches.length) {
+                        throw new Error("Définissez au moins une branche pour la condition")
                       }
-                      const normalizedRules = rules
-                        .map((r: any) => {
-                          let fieldKey = String(r?.fieldKey || "")
-                          if (!fieldKey) fieldKey = String(inferred || "")
-                          if (fieldKey && !questionFieldKeys.has(fieldKey) && inferred) fieldKey = String(inferred)
 
-                          const operator = String(r?.operator || "equals")
+                      const seenKeys = new Set<string>()
 
-                          const q = rfNodes.find((qn) => qn.type === "questionNode" && String((qn as any)?.data?.fieldKey || "") === fieldKey)
-                          const isBool = String((q as any)?.data?.inputType || "") === "boolean"
-                          const value = isBool ? normalizeBooleanRuleValue(r?.value) : String(r?.value ?? "")
+                      const normalizedBranches = branches
+                        .map((b: any) => {
+                          const key = String(b?.key || "").trim()
+                          if (!key) throw new Error("Chaque branche doit avoir un key")
+                          if (seenKeys.has(key)) throw new Error("Branch keys doivent être uniques")
+                          seenKeys.add(key)
 
-                          return { fieldKey, operator, value }
+                          const logic = String(b?.logic || "AND")
+                          const rules = Array.isArray(b?.rules) ? b.rules : []
+                          const hadInvalidRule = rules.some((r: any) => !String(r?.value ?? "").trim())
+                          if (hadInvalidRule) {
+                            throw new Error("Complétez toutes les règles de condition (value requis)")
+                          }
+
+                          const normalizedRules = rules
+                            .map((r: any) => {
+                              let fieldKey = String(r?.fieldKey || "")
+                              if (!fieldKey) fieldKey = String(inferred || "")
+                              if (fieldKey && !questionFieldKeys.has(fieldKey) && inferred) fieldKey = String(inferred)
+
+                              const operator = String(r?.operator || "equals")
+                              const q = rfNodes.find((qn) => qn.type === "questionNode" && String((qn as any)?.data?.fieldKey || "") === fieldKey)
+                              const isBool = String((q as any)?.data?.inputType || "") === "boolean"
+                              const value = isBool ? normalizeBooleanRuleValue(r?.value) : String(r?.value ?? "")
+
+                              return { fieldKey, operator, value }
+                            })
+                            .filter((r: any) => r.fieldKey && String(r.value ?? "").trim() !== "")
+
+                          return { key, logic, rules: normalizedRules }
                         })
-                        .filter((r: any) => r.fieldKey && String(r.value ?? "").trim() !== "")
+                        .filter((b: any) => b.key)
 
                       return {
                         id: String(n.id),
@@ -525,7 +631,7 @@ export function VerificationFlowBuilder() {
                         position: n.position,
                         data: {
                           ...(n as any).data,
-                          rules: normalizedRules,
+                          branches: normalizedBranches,
                         },
                       }
                     }
@@ -543,9 +649,31 @@ export function VerificationFlowBuilder() {
                       id: String(e.id),
                       source: String(e.source),
                       target: String(e.target),
-                      sourceHandle: e.sourceHandle,
+                      branchKey: String((e as any).branchKey ?? (e as any).sourceHandle ?? "").trim() || undefined,
                     })),
                 }
+
+                const outgoingCounts = new Map<string, number>()
+                const branchPairs = new Set<string>()
+
+                rfEdges.forEach((e) => {
+                  const src = String(e.source)
+                  outgoingCounts.set(src, (outgoingCounts.get(src) || 0) + 1)
+                  const key = String((e as any).branchKey || "").trim() || "__default__"
+                  const pair = `${src}::${key}`
+                  if (branchPairs.has(pair)) {
+                    throw new Error("Ambiguous routing: duplicate branch key for a node")
+                  }
+                  branchPairs.add(pair)
+                })
+
+                rfNodes.forEach((n) => {
+                  if (n.type !== "questionNode" && n.type !== "actionNode") return
+                  const count = outgoingCounts.get(String(n.id)) || 0
+                  if (count > 1) {
+                    throw new Error("Invalid graph: question/action must have only 1 outgoing edge")
+                  }
+                })
 
                 const res = await fetch(`/api/admin/verification/flows/${flowId}`, {
                   method: "PATCH",
@@ -630,6 +758,13 @@ export function VerificationFlowBuilder() {
       }
 
       if (entity === "node") {
+        const normalizedOptions = nodeOptionsText
+          .split("\n")
+          .map((x) => x.trim())
+          .filter(Boolean)
+
+        const shouldApplyOptions = ["select", "multi_select"].includes(String(nodeForm?.data?.inputType || ""))
+
         const nodeId = mode === "edit" ? String(editing?.id) : createNodeId("n")
         const nodeType = String(nodeForm?.type || "questionNode")
 
@@ -640,7 +775,10 @@ export function VerificationFlowBuilder() {
         const next: Node = {
           id: nodeId,
           type: nodeType,
-          data: nodeForm.data,
+          data: {
+            ...(nodeForm.data || {}),
+            ...(shouldApplyOptions ? { options: normalizedOptions } : {}),
+          },
           position: mode === "edit" ? editing.position : { x: 80, y: 80 },
         }
 
@@ -792,7 +930,15 @@ export function VerificationFlowBuilder() {
                 const node: Node = {
                   id,
                   type: "conditionNode",
-                  data: { logic: "AND", rules: [] },
+                  data: {
+                    branches: [
+                      { key: "branch_1", logic: "AND", rules: [] },
+                      { key: "branch_2", logic: "AND", rules: [] },
+                      { key: "branch_3", logic: "AND", rules: [] },
+                      { key: "branch_4", logic: "AND", rules: [] },
+                    ],
+                    fallbackBranchKey: "default",
+                  },
                   position: { x: 380, y: 40 },
                 }
                 setRfNodes((prev) => [...prev, node])
@@ -990,19 +1136,22 @@ export function VerificationFlowBuilder() {
                 <div className="space-y-1">
                   <label className="text-sm font-medium">options (une par ligne)</label>
                   <textarea
-                    value={Array.isArray(nodeForm.data?.options) ? nodeForm.data.options.join("\n") : ""}
-                    onChange={(e) =>
+                    value={nodeOptionsText}
+                    onChange={(e) => setNodeOptionsText(e.target.value)}
+                    onBlur={() => {
+                      const normalized = nodeOptionsText
+                        .split("\n")
+                        .map((x) => x.trim())
+                        .filter(Boolean)
+
                       setNodeForm((p: any) => ({
                         ...p,
                         data: {
                           ...(p.data || {}),
-                          options: e.target.value
-                            .split("\n")
-                            .map((x) => x.trim())
-                            .filter(Boolean),
+                          options: normalized,
                         },
                       }))
-                    }
+                    }}
                     className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
                   />
                 </div>
@@ -1062,124 +1211,175 @@ export function VerificationFlowBuilder() {
 
             {String(nodeForm.type || "") === "conditionNode" ? (
               <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Logic</label>
-                  <select
-                    value={nodeForm.data?.logic || "AND"}
-                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), logic: e.target.value } }))}
-                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                  >
-                    <option value="AND">AND</option>
-                    <option value="OR">OR</option>
-                  </select>
-                </div>
+                {(() => {
+                  const branches = Array.isArray(nodeForm.data?.branches) ? nodeForm.data.branches : []
+                  const ensureMinBranches = () => {
+                    if (branches.length >= 4) return branches
+                    const next = [...branches]
+                    for (let i = next.length; i < 4; i++) {
+                      next.push({ key: `branch_${i + 1}`, logic: "AND", rules: [] })
+                    }
+                    return next
+                  }
 
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Règles</div>
-                  {(Array.isArray(nodeForm.data?.rules) ? nodeForm.data.rules : []).map((r: any, idx: number) => (
-                    <div key={idx} className="grid gap-2 sm:grid-cols-3">
-                      <input
-                        value={r.fieldKey || ""}
-                        placeholder="fieldKey"
-                        onChange={(e) =>
-                          setNodeForm((p: any) => {
-                            const rules = Array.isArray(p.data?.rules) ? [...p.data.rules] : []
-                            rules[idx] = { ...rules[idx], fieldKey: e.target.value }
-                            return { ...p, data: { ...(p.data || {}), rules } }
-                          })
-                        }
-                        className="h-10 rounded-md border bg-background px-3 text-sm"
-                      />
-                      <select
-                        value={r.operator || "equals"}
-                        onChange={(e) =>
-                          setNodeForm((p: any) => {
-                            const rules = Array.isArray(p.data?.rules) ? [...p.data.rules] : []
-                            rules[idx] = { ...rules[idx], operator: e.target.value }
-                            return { ...p, data: { ...(p.data || {}), rules } }
-                          })
-                        }
-                        className="h-10 rounded-md border bg-background px-3 text-sm"
-                      >
-                        <option value="equals">equals</option>
-                        <option value="not_equals">not_equals</option>
-                        <option value="greater_than">greater_than</option>
-                        <option value="less_than">less_than</option>
-                        <option value="includes">includes</option>
-                      </select>
-                      {(() => {
-                        const key = String(r.fieldKey || "")
-                        const q = rfNodes.find((n) => n.type === "questionNode" && String((n as any)?.data?.fieldKey || "") === key)
-                        const isBool = String((q as any)?.data?.inputType || "") === "boolean"
+                  const normalizedBranches = ensureMinBranches()
 
-                        if (isBool) {
-                          return (
-                            <select
-                              value={String(r.value || "")}
-                              onChange={(e) =>
-                                setNodeForm((p: any) => {
-                                  const rules = Array.isArray(p.data?.rules) ? [...p.data.rules] : []
-                                  rules[idx] = { ...rules[idx], value: e.target.value }
-                                  return { ...p, data: { ...(p.data || {}), rules } }
-                                })
-                              }
-                              className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                            >
-                              <option value="">Sélectionner...</option>
-                              <option value="true">Oui</option>
-                              <option value="false">Non</option>
-                            </select>
-                          )
-                        }
+                  const setBranches = (nextBranches: any[]) => {
+                    setNodeForm((p: any) => ({
+                      ...p,
+                      data: {
+                        ...(p.data || {}),
+                        branches: nextBranches,
+                      },
+                    }))
+                  }
 
-                        return (
-                          <input
-                            value={r.value || ""}
-                            placeholder="value"
-                            onChange={(e) =>
-                              setNodeForm((p: any) => {
-                                const rules = Array.isArray(p.data?.rules) ? [...p.data.rules] : []
-                                rules[idx] = { ...rules[idx], value: e.target.value }
-                                return { ...p, data: { ...(p.data || {}), rules } }
-                              })
-                            }
-                            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                          />
-                        )
-                      })()}
-                      <div className="flex gap-2">
+                  return (
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium">Fallback branch</label>
+                        <input
+                          value={String(nodeForm.data?.fallbackBranchKey || "")}
+                          onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), fallbackBranchKey: e.target.value } }))}
+                          placeholder="default"
+                          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="text-sm font-medium">Branches</div>
+                        {normalizedBranches.map((b: any, bIdx: number) => (
+                          <div key={bIdx} className="space-y-2 rounded-md border bg-background/50 p-2">
+                            <div className="grid gap-2 sm:grid-cols-3">
+                              <input
+                                value={String(b?.key || "")}
+                                placeholder="branch key"
+                                onChange={(e) => {
+                                  const next = [...normalizedBranches]
+                                  next[bIdx] = { ...next[bIdx], key: e.target.value }
+                                  setBranches(next)
+                                }}
+                                className="h-10 rounded-md border bg-background px-3 text-sm"
+                              />
+                              <select
+                                value={String(b?.logic || "AND")}
+                                onChange={(e) => {
+                                  const next = [...normalizedBranches]
+                                  next[bIdx] = { ...next[bIdx], logic: e.target.value }
+                                  setBranches(next)
+                                }}
+                                className="h-10 rounded-md border bg-background px-3 text-sm"
+                              >
+                                <option value="AND">AND</option>
+                                <option value="OR">OR</option>
+                              </select>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                                onClick={() => {
+                                  const next = [...normalizedBranches]
+                                  next.splice(bIdx, 1)
+                                  setBranches(next)
+                                }}
+                              >
+                                Suppr branche
+                              </Button>
+                            </div>
+
+                            <div className="space-y-2">
+                              {(Array.isArray(b?.rules) ? b.rules : []).map((r: any, idx: number) => (
+                                <div key={idx} className="grid gap-2 sm:grid-cols-3">
+                                  <input
+                                    value={r.fieldKey || ""}
+                                    placeholder="fieldKey"
+                                    onChange={(e) => {
+                                      const next = [...normalizedBranches]
+                                      const rules = Array.isArray(next[bIdx]?.rules) ? [...next[bIdx].rules] : []
+                                      rules[idx] = { ...rules[idx], fieldKey: e.target.value }
+                                      next[bIdx] = { ...next[bIdx], rules }
+                                      setBranches(next)
+                                    }}
+                                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                                  />
+                                  <select
+                                    value={r.operator || "equals"}
+                                    onChange={(e) => {
+                                      const next = [...normalizedBranches]
+                                      const rules = Array.isArray(next[bIdx]?.rules) ? [...next[bIdx].rules] : []
+                                      rules[idx] = { ...rules[idx], operator: e.target.value }
+                                      next[bIdx] = { ...next[bIdx], rules }
+                                      setBranches(next)
+                                    }}
+                                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                                  >
+                                    <option value="equals">equals</option>
+                                    <option value="not_equals">not_equals</option>
+                                    <option value="greater_than">greater_than</option>
+                                    <option value="less_than">less_than</option>
+                                    <option value="includes">includes</option>
+                                  </select>
+                                  <input
+                                    value={r.value || ""}
+                                    placeholder="value"
+                                    onChange={(e) => {
+                                      const next = [...normalizedBranches]
+                                      const rules = Array.isArray(next[bIdx]?.rules) ? [...next[bIdx].rules] : []
+                                      rules[idx] = { ...rules[idx], value: e.target.value }
+                                      next[bIdx] = { ...next[bIdx], rules }
+                                      setBranches(next)
+                                    }}
+                                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                                    onClick={() => {
+                                      const next = [...normalizedBranches]
+                                      const rules = Array.isArray(next[bIdx]?.rules) ? [...next[bIdx].rules] : []
+                                      rules.splice(idx, 1)
+                                      next[bIdx] = { ...next[bIdx], rules }
+                                      setBranches(next)
+                                    }}
+                                  >
+                                    Suppr
+                                  </Button>
+                                </div>
+                              ))}
+
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                  const next = [...normalizedBranches]
+                                  const rules = Array.isArray(next[bIdx]?.rules) ? [...next[bIdx].rules] : []
+                                  rules.push({ fieldKey: "", operator: "equals", value: "" })
+                                  next[bIdx] = { ...next[bIdx], rules }
+                                  setBranches(next)
+                                }}
+                              >
+                                + Add rule
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+
                         <Button
                           type="button"
                           variant="outline"
-                          className="border-destructive/40 text-destructive hover:bg-destructive/10"
-                          onClick={() =>
-                            setNodeForm((p: any) => {
-                              const rules = Array.isArray(p.data?.rules) ? [...p.data.rules] : []
-                              rules.splice(idx, 1)
-                              return { ...p, data: { ...(p.data || {}), rules } }
-                            })
-                          }
+                          onClick={() => {
+                            const next = [...normalizedBranches]
+                            next.push({ key: `branch_${next.length + 1}`, logic: "AND", rules: [] })
+                            setBranches(next)
+                          }}
                         >
-                          Suppr
+                          + Add branch
                         </Button>
                       </div>
                     </div>
-                  ))}
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      setNodeForm((p: any) => {
-                        const rules = Array.isArray(p.data?.rules) ? [...p.data.rules] : []
-                        rules.push({ fieldKey: "", operator: "equals", value: "" })
-                        return { ...p, data: { ...(p.data || {}), rules } }
-                      })
-                    }
-                  >
-                    + Add rule
-                  </Button>
-                </div>
+                  )
+                })()}
               </div>
             ) : null}
 
