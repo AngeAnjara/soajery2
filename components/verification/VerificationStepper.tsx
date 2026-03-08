@@ -60,9 +60,39 @@ export function VerificationStepper({ userId }: Props) {
           onBack={() => {
             setStep(1)
           }}
+          onRedirect={async (targetFlowId) => {
+            try {
+              const res = await fetch("/api/verification")
+              const data = await res.json()
+              const list = Array.isArray(data?.flows) ? data.flows : []
+              const next = list.find((f: any) => String(f?._id || "") === String(targetFlowId))
+              setFlow(next || ({ ...(flow as any), _id: targetFlowId } as any))
+            } catch {
+              setFlow({ ...(flow as any), _id: targetFlowId } as any)
+            } finally {
+              setEvaluation(null)
+              setStep(2)
+            }
+          }}
           onEvaluated={(res) => {
-            setEvaluation(res)
-            setStep(3)
+            ;(async () => {
+              const resolvedFlowId = String((res as any)?.resolvedFlowId || "").trim()
+              if (resolvedFlowId && resolvedFlowId !== String(flow._id)) {
+                try {
+                  const r = await fetch("/api/verification")
+                  const d = await r.json()
+                  const list = Array.isArray(d?.flows) ? d.flows : []
+                  const resolved = list.find((f: any) => String(f?._id || "") === resolvedFlowId)
+                  if (resolved) setFlow(resolved)
+                  else setFlow({ ...(flow as any), _id: resolvedFlowId } as any)
+                } catch {
+                  setFlow({ ...(flow as any), _id: resolvedFlowId } as any)
+                }
+              }
+
+              setEvaluation(res)
+              setStep(3)
+            })()
           }}
         />
       ) : null}

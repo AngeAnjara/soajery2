@@ -625,16 +625,28 @@ export function VerificationFlowBuilder() {
                       const normalizedBranches = branches
                         .map((b: any) => {
                           const key = String(b?.key || "").trim()
-                          if (!key) throw new Error("Chaque branche doit avoir un key")
-                          if (seenKeys.has(key)) throw new Error("Branch keys doivent être uniques")
+                          if (!key) {
+                            throw new Error(`Branche invalide: key vide dans la condition '${String(n.id)}'`)
+                          }
+                          if (seenKeys.has(key)) {
+                            throw new Error(`Branche invalide: key dupliquée '${key}' dans la condition '${String(n.id)}'`)
+                          }
                           seenKeys.add(key)
 
-                          const logic = String(b?.logic || "AND")
+                          const logic = String(b?.logic || "AND") as any
                           const rules = Array.isArray(b?.rules) ? b.rules : []
-                          const hadInvalidRule = rules.some((r: any) => !String(r?.value ?? "").trim())
-                          if (hadInvalidRule) {
-                            throw new Error("Complétez toutes les règles de condition (value requis)")
-                          }
+
+                          const transition = b?.transition && typeof b.transition === "object" ? b.transition : undefined
+                          const normalizedTransition =
+                            transition && String((transition as any)?.flowId || "").trim()
+                              ? {
+                                  flowId: String((transition as any).flowId),
+                                  entry:
+                                    transition?.entry && typeof transition.entry === "object"
+                                      ? (transition.entry as any)
+                                      : undefined,
+                                }
+                              : undefined
 
                           const normalizedRules = rules
                             .map((r: any) => {
@@ -651,14 +663,14 @@ export function VerificationFlowBuilder() {
                             })
                             .filter((r: any) => r.fieldKey && String(r.value ?? "").trim() !== "")
 
-                          return { key, logic, rules: normalizedRules }
+                          return { key, logic, rules: normalizedRules, ...(normalizedTransition ? { transition: normalizedTransition } : {}) }
                         })
-                        .filter((b: any) => b.key)
+
 
                       return {
                         id: String(n.id),
                         type: "condition",
-                        position: n.position,
+                        position: rfNodePositionsRef.current.get(String(n.id)) || (n.position as any),
                         data: {
                           ...(n as any).data,
                           branches: normalizedBranches,
@@ -824,9 +836,23 @@ export function VerificationFlowBuilder() {
           if (oldQuestionFieldKey && nextQuestionFieldKey && oldQuestionFieldKey !== nextQuestionFieldKey) {
             base = base.map((n) => {
               if (n.type !== "conditionNode") return n
-              const rules = Array.isArray((n as any)?.data?.rules) ? (n as any).data.rules : []
-              const nextRules = rules.map((r: any) => (String(r?.fieldKey || "") === oldQuestionFieldKey ? { ...r, fieldKey: nextQuestionFieldKey } : r))
-              return { ...n, data: { ...(n as any).data, rules: nextRules } }
+              const d: any = (n as any).data || {}
+
+              const legacyRules = Array.isArray(d?.rules) ? d.rules : []
+              const nextLegacyRules = legacyRules.map((r: any) =>
+                String(r?.fieldKey || "") === oldQuestionFieldKey ? { ...r, fieldKey: nextQuestionFieldKey } : r,
+              )
+
+              const branches = Array.isArray(d?.branches) ? d.branches : []
+              const nextBranches = branches.map((b: any) => {
+                const rules = Array.isArray(b?.rules) ? b.rules : []
+                const nextRules = rules.map((r: any) =>
+                  String(r?.fieldKey || "") === oldQuestionFieldKey ? { ...r, fieldKey: nextQuestionFieldKey } : r,
+                )
+                return { ...(b || {}), rules: nextRules }
+              })
+
+              return { ...n, data: { ...d, rules: nextLegacyRules, branches: nextBranches } }
             })
           }
           if (mode === "edit") {
@@ -1325,6 +1351,77 @@ export function VerificationFlowBuilder() {
                               </Button>
                             </div>
 
+                            <div className="grid gap-2 sm:grid-cols-3">
+                              <select
+                                value={String(b?.transition?.flowId || "")}
+                                onChange={(e) => {
+                                  const flowId = String(e.target.value || "")
+                                  const next = [...normalizedBranches]
+                                  const prevBranch = next[bIdx] || {}
+                                  next[bIdx] = {
+                                    ...prevBranch,
+                                    transition: flowId
+                                      ? { flowId, entry: { type: "start" } }
+                                      : undefined,
+                                  }
+                                  setBranches(next)
+                                }}
+                                className="h-10 rounded-md border bg-background px-3 text-sm"
+                              >
+                                <option value="">(pas de transition)</option>
+                                {flows
+                                  .filter((f: any) => String(f?._id || "") !== String(flowId || ""))
+                                  .map((f: any) => (
+                                    <option key={String(f._id)} value={String(f._id)}>
+                                      {String(f.title || f._id)}
+                                    </option>
+                                  ))}
+                              </select>
+
+                              <select
+                                value={String(b?.transition?.entry?.type || "start")}
+                                onChange={(e) => {
+                                  const t = String(e.target.value || "start")
+                                  const next = [...normalizedBranches]
+                                  const prevBranch = next[bIdx] || {}
+                                  const tr = prevBranch.transition && typeof prevBranch.transition === "object" ? prevBranch.transition : undefined
+                                  if (!tr?.flowId) return
+                                  next[bIdx] = {
+                                    ...prevBranch,
+                                    transition: {
+                                      ...tr,
+                                      entry: t === "node" ? { type: "node", nodeId: "" } : { type: "start" },
+                                    },
+                                  }
+                                  setBranches(next)
+                                }}
+                                disabled={!b?.transition?.flowId}
+                                className="h-10 rounded-md border bg-background px-3 text-sm"
+                              >
+                                <option value="start">entrée: start</option>
+                                <option value="node">entrée: nodeId</option>
+                              </select>
+
+                              <input
+                                value={String(b?.transition?.entry?.type === "node" ? b?.transition?.entry?.nodeId || "" : "")}
+                                onChange={(e) => {
+                                  const next = [...normalizedBranches]
+                                  const prevBranch = next[bIdx] || {}
+                                  const tr = prevBranch.transition && typeof prevBranch.transition === "object" ? prevBranch.transition : undefined
+                                  if (!tr?.flowId) return
+                                  if (String(tr?.entry?.type || "start") !== "node") return
+                                  next[bIdx] = {
+                                    ...prevBranch,
+                                    transition: { ...tr, entry: { type: "node", nodeId: e.target.value } },
+                                  }
+                                  setBranches(next)
+                                }}
+                                disabled={!b?.transition?.flowId || String(b?.transition?.entry?.type || "start") !== "node"}
+                                placeholder="nodeId (optionnel)"
+                                className="h-10 rounded-md border bg-background px-3 text-sm"
+                              />
+                            </div>
+
                             <div className="space-y-2">
                               {(Array.isArray(b?.rules) ? b.rules : []).map((r: any, idx: number) => (
                                 <div key={idx} className="grid gap-2 sm:grid-cols-3">
@@ -1422,17 +1519,104 @@ export function VerificationFlowBuilder() {
             ) : null}
 
             {String(nodeForm.type || "") === "actionNode" ? (
-              <div className="space-y-1">
-                <label className="text-sm font-medium">actionType</label>
-                <select
-                  value={nodeForm.data?.actionType || "call_ai"}
-                  onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), actionType: e.target.value } }))}
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
-                >
-                  <option value="call_ai">call_ai</option>
-                  <option value="show_result">show_result</option>
-                  <option value="redirect">redirect</option>
-                </select>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">actionType</label>
+                  <select
+                    value={nodeForm.data?.actionType || "call_ai"}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), actionType: e.target.value } }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="call_ai">call_ai</option>
+                    <option value="show_result">show_result</option>
+                    <option value="redirect">redirect</option>
+                  </select>
+                </div>
+
+                {String(nodeForm.data?.actionType || "") === "redirect" ? (
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <select
+                      value={String(nodeForm.data?.payload?.redirect?.target?.flowId || "")}
+                      onChange={(e) => {
+                        const targetFlowId = String(e.target.value || "")
+                        setNodeForm((p: any) => ({
+                          ...p,
+                          data: {
+                            ...(p.data || {}),
+                            payload: {
+                              ...((p.data || {}).payload || {}),
+                              redirect: targetFlowId
+                                ? { target: { flowId: targetFlowId, entry: { type: "start" } } }
+                                : undefined,
+                            },
+                          },
+                        }))
+                      }}
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                    >
+                      <option value="">Choisir un flow...</option>
+                      {flows.map((f: any) => (
+                        <option key={String(f._id)} value={String(f._id)}>
+                          {String(f.title || f._id)}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={String(nodeForm.data?.payload?.redirect?.target?.entry?.type || "start")}
+                      onChange={(e) => {
+                        const t = String(e.target.value || "start")
+                        setNodeForm((p: any) => {
+                          const cur = (p.data || {}).payload?.redirect?.target
+                          if (!cur?.flowId) return p
+                          return {
+                            ...p,
+                            data: {
+                              ...(p.data || {}),
+                              payload: {
+                                ...((p.data || {}).payload || {}),
+                                redirect: { target: { ...cur, entry: t === "node" ? { type: "node", nodeId: "" } : { type: "start" } } },
+                              },
+                            },
+                          }
+                        })
+                      }}
+                      disabled={!nodeForm.data?.payload?.redirect?.target?.flowId}
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                    >
+                      <option value="start">entrée: start</option>
+                      <option value="node">entrée: nodeId</option>
+                    </select>
+
+                    <input
+                      value={String(
+                        nodeForm.data?.payload?.redirect?.target?.entry?.type === "node"
+                          ? nodeForm.data?.payload?.redirect?.target?.entry?.nodeId || ""
+                          : "",
+                      )}
+                      onChange={(e) => {
+                        setNodeForm((p: any) => {
+                          const cur = (p.data || {}).payload?.redirect?.target
+                          if (!cur?.flowId) return p
+                          if (String(cur?.entry?.type || "start") !== "node") return p
+                          return {
+                            ...p,
+                            data: {
+                              ...(p.data || {}),
+                              payload: {
+                                ...((p.data || {}).payload || {}),
+                                redirect: { target: { ...cur, entry: { type: "node", nodeId: e.target.value } } },
+                              },
+                            },
+                          }
+                        })
+                      }}
+                      disabled={String(nodeForm.data?.payload?.redirect?.target?.entry?.type || "start") !== "node"}
+                      placeholder="nodeId"
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                    />
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

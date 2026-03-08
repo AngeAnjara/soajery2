@@ -69,33 +69,109 @@ const flowSchemaObject = z.object({
         id: z.string().min(1),
         type: z.literal("condition"),
         position: z.object({ x: z.number(), y: z.number() }),
-        data: z.object({
-          branches: z
-            .array(
-              z.object({
-                key: z.string().min(1),
-                logic: z.enum(["AND", "OR"]),
-                rules: z.array(
-                  z.object({
-                    fieldKey: z.string().min(1),
-                    operator: z.enum(["equals", "not_equals", "greater_than", "less_than", "includes"]),
-                    value: z.string().min(1),
-                  }),
-                ),
-              }),
-            )
-            .optional(),
-          fallbackBranchKey: z.string().min(1).optional(),
-        }),
+        data: z
+          .object({
+            branches: z
+              .array(
+                z.object({
+                  key: z.string().min(1),
+                  logic: z.enum(["AND", "OR"]),
+                  rules: z.array(
+                    z.object({
+                      fieldKey: z.string().min(1),
+                      operator: z.enum(["equals", "not_equals", "greater_than", "less_than", "includes"]),
+                      value: z.string().min(1),
+                    }),
+                  ),
+                  transition: z
+                    .object({
+                      flowId: z.string().min(1),
+                      entry: z
+                        .union([
+                          z.object({ type: z.literal("start") }),
+                          z.object({ type: z.literal("node"), nodeId: z.string().min(1) }),
+                        ])
+                        .optional(),
+                    })
+                    .optional(),
+                }),
+              )
+              .optional(),
+            fallbackBranchKey: z.string().min(1).optional(),
+          })
+          .superRefine((data, ctx) => {
+            const branches = Array.isArray((data as any)?.branches) ? (data as any).branches : []
+            const seen = new Set<string>()
+            for (const b of branches) {
+              const key = String((b as any)?.key || "").trim()
+              if (!key) continue
+              if (seen.has(key)) {
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  message: `Duplicate branch key '${key}' in condition node branches.`,
+                  path: ["branches"],
+                })
+                break
+              }
+              seen.add(key)
+            }
+          }),
       }),
       z.object({
         id: z.string().min(1),
         type: z.literal("action"),
         position: z.object({ x: z.number(), y: z.number() }),
-        data: z.object({
-          actionType: z.enum(["call_ai", "show_result", "redirect"]),
-          payload: z.record(z.any()).optional(),
-        }),
+        data: z
+          .object({
+            actionType: z.enum(["call_ai", "show_result", "redirect"]),
+            payload: z.record(z.any()).optional(),
+          })
+          .superRefine((val, ctx) => {
+            if (val.actionType !== "redirect") return
+            const redirect = (val as any)?.payload?.redirect
+            if (!redirect || typeof redirect !== "object") {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "redirect action requires payload.redirect",
+                path: ["payload", "redirect"],
+              })
+              return
+            }
+
+            const target = (redirect as any)?.target
+            if (!target || typeof target !== "object") {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "redirect action requires payload.redirect.target",
+                path: ["payload", "redirect", "target"],
+              })
+              return
+            }
+
+            const flowId = String((target as any)?.flowId || "").trim()
+            if (!flowId) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: "redirect target.flowId is required",
+                path: ["payload", "redirect", "target", "flowId"],
+              })
+            }
+
+            const entry = (target as any)?.entry
+            if (entry && typeof entry === "object") {
+              const t = String((entry as any)?.type || "").trim()
+              if (t === "node") {
+                const nodeId = String((entry as any)?.nodeId || "").trim()
+                if (!nodeId) {
+                  ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: "redirect target.entry.nodeId is required when entry.type is 'node'",
+                    path: ["payload", "redirect", "target", "entry", "nodeId"],
+                  })
+                }
+              }
+            }
+          }),
       }),
       z.object({
         id: z.string().min(1),

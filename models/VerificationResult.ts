@@ -15,6 +15,12 @@ export interface IVerificationResult extends mongoose.Document {
     confidence: string
   }
   resultNodeId?: string
+  transitionLineage?: {
+    fromFlowId: string
+    toFlowId: string
+    kind: "condition_transition" | "redirect"
+    fromNodeId?: string
+  }[]
   summary: string
   status: VerificationResultStatus
 }
@@ -26,6 +32,7 @@ const VerificationResultSchema = new Schema<IVerificationResult>(
     answers: { type: Schema.Types.Mixed, required: true },
     aiAnalysis: { type: Schema.Types.Mixed, required: false },
     resultNodeId: { type: String, required: false },
+    transitionLineage: { type: [Schema.Types.Mixed], required: false },
     summary: { type: String },
     status: { type: String, enum: ["pending", "unlocked"], default: "pending" },
   },

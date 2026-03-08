@@ -11,9 +11,10 @@ type Props = {
   flowId: string
   onBack: () => void
   onEvaluated: (result: FlowRunResultDTO) => void
+  onRedirect?: (targetFlowId: string) => void
 }
 
-export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
+export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props) {
   const [questions, setQuestions] = React.useState<Extract<FlowNodeDTO, { type: "question" }>[]>([])
   const [answers, setAnswers] = React.useState<Record<string, string | string[] | boolean | number>>({})
   const [loading, setLoading] = React.useState(true)
@@ -28,6 +29,35 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
   const fetchControllerRef = React.useRef<AbortController | null>(null)
   const evalControllerRef = React.useRef<AbortController | null>(null)
   const autoSubmitKeyRef = React.useRef<string>("")
+
+  const handleContinuation = React.useCallback(
+    async (res: FlowRunResultDTO) => {
+      const target =
+        res?.actionType === "redirect"
+          ? (res as any)?.redirect?.target
+          : res?.actionType === "transition"
+            ? (res as any)?.transition
+            : null
+
+      const nextFlowId = target && typeof target === "object" ? String((target as any).flowId || "") : ""
+      if (!nextFlowId) return false
+
+      setAnswers({})
+      setQuestions([] as any)
+      setTerminalAlert(false)
+      setPreview(null)
+      setAutoSubmitError(null)
+      autoSubmitKeyRef.current = ""
+
+      if (onRedirect) {
+        onRedirect(nextFlowId)
+        return true
+      }
+
+      return false
+    },
+    [onRedirect],
+  )
 
   const fetchQuestions = React.useCallback(
     async (nextAnswers: Record<string, string | string[] | boolean | number>) => {
@@ -147,7 +177,9 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
           throw new Error(data?.error || "Erreur")
         }
 
-        onEvaluated(data as FlowRunResultDTO)
+        const parsed = data as FlowRunResultDTO
+        const continued = await handleContinuation(parsed)
+        if (!continued) onEvaluated(parsed)
       } catch (err: any) {
         if (err?.name !== "AbortError") {
           const msg = err?.message || "Erreur lors de l'évaluation"
@@ -180,7 +212,9 @@ export function QuestionForm({ flowId, onBack, onEvaluated }: Props) {
         throw new Error(data?.error || "Erreur")
       }
 
-      onEvaluated(data as FlowRunResultDTO)
+      const parsed = data as FlowRunResultDTO
+      const continued = await handleContinuation(parsed)
+      if (!continued) onEvaluated(parsed)
     } catch (err: any) {
       toast.error(err?.message || "Erreur lors de l'évaluation")
     } finally {

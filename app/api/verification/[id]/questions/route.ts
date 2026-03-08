@@ -10,7 +10,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params
     await connectDB()
 
-    const flow = await VerificationFlow.findById(id).lean()
+    const flow = await VerificationFlow.findOne({ _id: id, status: "published" }).lean()
     if (!flow) {
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     await connectDB()
 
-    const flow = await VerificationFlow.findById(id).lean()
+    const flow = await VerificationFlow.findOne({ _id: id, status: "published" }).lean()
     if (!flow) {
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }

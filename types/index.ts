@@ -87,13 +87,16 @@ export type VerificationFlowDTO = {
   startNodeId: string
 }
 
-export type { FlowNode as FlowNodeDTO } from "@/types/flow"
+export type { FlowNode as FlowNodeDTO, RedirectPayload, FlowTransitionTarget } from "@/types/flow"
 
 export type FlowRunResultDTO = {
   resultId: string
+  resolvedFlowId?: string
   nextNodeId?: string
   actionType?: string
   prompt?: string
+  redirect?: RedirectPayload
+  transition?: FlowTransitionTarget
   aiAnalysis?: any
   resultType?: "result" | "alert"
   resultColor?: "red" | "green"

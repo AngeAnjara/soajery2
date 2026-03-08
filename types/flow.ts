@@ -23,13 +23,30 @@ export type ConditionNodeData = {
     key: string
     logic: "AND" | "OR"
     rules: ConditionRule[]
+    transition?: FlowTransitionTarget
   }[]
   fallbackBranchKey?: string
 }
 
+export type FlowTransitionTarget = {
+  flowId: string
+  entry?:
+    | { type: "start" }
+    | {
+        type: "node"
+        nodeId: string
+      }
+}
+
+export type RedirectPayload = {
+  target: FlowTransitionTarget
+}
+
 export type ActionNodeData = {
   actionType: "call_ai" | "show_result" | "redirect"
-  payload?: Record<string, any>
+  payload?: Record<string, any> & {
+    redirect?: RedirectPayload
+  }
 }
 
 export type ResultNodeData = {
@@ -68,9 +85,12 @@ export type UserAnswers = Record<string, string | string[] | boolean | number>
 
 export type FlowRunResultDTO = {
   resultId: string
+  resolvedFlowId?: string
   nextNodeId?: string
   actionType?: string
   prompt?: string
+  redirect?: RedirectPayload
+  transition?: FlowTransitionTarget
   aiAnalysis?: any
   resultType?: "result" | "alert"
   resultColor?: "red" | "green"
