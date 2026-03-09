@@ -16,6 +16,8 @@ type Props = {
 
 export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props) {
   const [questions, setQuestions] = React.useState<Extract<FlowNodeDTO, { type: "question" }>[]>([])
+  const [historyQuestions, setHistoryQuestions] = React.useState<Extract<FlowNodeDTO, { type: "question" }>[]>([])
+  const [historyAnswers, setHistoryAnswers] = React.useState<Record<string, string | string[] | boolean | number>>({})
   const [answers, setAnswers] = React.useState<Record<string, string | string[] | boolean | number>>({})
   const [loading, setLoading] = React.useState(true)
   const [submitting, setSubmitting] = React.useState(false)
@@ -29,6 +31,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
   const fetchControllerRef = React.useRef<AbortController | null>(null)
   const evalControllerRef = React.useRef<AbortController | null>(null)
   const autoSubmitKeyRef = React.useRef<string>("")
+  const prevFlowIdRef = React.useRef<string>(flowId)
 
   const handleContinuation = React.useCallback(
     async (res: FlowRunResultDTO) => {
@@ -41,13 +44,6 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
 
       const nextFlowId = target && typeof target === "object" ? String((target as any).flowId || "") : ""
       if (!nextFlowId) return false
-
-      setAnswers({})
-      setQuestions([] as any)
-      setTerminalAlert(false)
-      setPreview(null)
-      setAutoSubmitError(null)
-      autoSubmitKeyRef.current = ""
 
       if (onRedirect) {
         onRedirect(nextFlowId)
@@ -75,7 +71,22 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       if (!res.ok) {
         throw new Error(data?.error || "Erreur")
       }
+
+      const resolvedFlowId = typeof (data as any)?.resolvedFlowId === "string" ? String((data as any).resolvedFlowId).trim() : ""
+
+      if (resolvedFlowId && resolvedFlowId !== String(flowId)) {
+        if (onRedirect) {
+          onRedirect(resolvedFlowId)
+        }
+        return {
+          redirected: true,
+          questions: [] as any[],
+          terminalAlert: false,
+          preview: null,
+        }
+      }
       return {
+        redirected: false,
         questions: (data?.questions || []) as any[],
         terminalAlert: !!data?.terminalAlert,
         preview: {
@@ -86,19 +97,37 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         } as any,
       }
     },
-    [flowId],
+    [flowId, onRedirect],
   )
 
   React.useEffect(() => {
     let mounted = true
 
+    if (prevFlowIdRef.current && prevFlowIdRef.current !== flowId && questions.length) {
+      const toAdd = questions
+      setHistoryQuestions((prev) => {
+        return [...prev, ...toAdd]
+      })
+
+      setHistoryAnswers((prev) => ({ ...prev, ...answers }))
+
+      setAnswers({})
+      setTerminalAlert(false)
+      setPreview(null)
+      setAutoSubmitError(null)
+      autoSubmitKeyRef.current = ""
+    }
+    prevFlowIdRef.current = flowId
+
     ;(async () => {
       try {
         if (mounted) {
           const r = await fetchQuestions({})
-          setQuestions(r.questions as any)
-          setTerminalAlert(!!r.terminalAlert)
-          setPreview(r.preview || null)
+          if (!r.redirected) {
+            setQuestions(r.questions as any)
+            setTerminalAlert(!!r.terminalAlert)
+            setPreview(r.preview || null)
+          }
         }
       } catch (err: any) {
         if (err?.name !== "AbortError") {
@@ -125,9 +154,11 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         try {
           const r = await fetchQuestions(answers)
           if (!cancelled) {
-            setQuestions(r.questions as any)
-            setTerminalAlert(!!r.terminalAlert)
-            setPreview(r.preview || null)
+            if (!r.redirected) {
+              setQuestions(r.questions as any)
+              setTerminalAlert(!!r.terminalAlert)
+              setPreview(r.preview || null)
+            }
           }
         } catch (err: any) {
           if (err?.name !== "AbortError") {
@@ -245,6 +276,101 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
           Retour
         </Button>
       </div>
+
+      {historyQuestions.length ? (
+        <div className="space-y-4">
+          {historyQuestions.map((q) => {
+            const fieldKey = q.data.fieldKey
+            const label = q.data.label || q.data.fieldKey
+            const value = historyAnswers[fieldKey]
+
+            if (q.data.inputType === "boolean") {
+              return (
+                <div key={q.id} className="space-y-2 opacity-80">
+                  <div className="text-sm font-medium">{label}</div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="radio" name={fieldKey} checked={value === true} readOnly disabled />
+                      <span>Oui</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="radio" name={fieldKey} checked={value === false} readOnly disabled />
+                      <span>Non</span>
+                    </label>
+                  </div>
+                </div>
+              )
+            }
+
+            if (q.data.inputType === "text") {
+              return (
+                <div key={q.id} className="space-y-2 opacity-80">
+                  <div className="text-sm font-medium">{label}</div>
+                  <input
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    value={typeof value === "string" ? value : ""}
+                    readOnly
+                    disabled
+                  />
+                </div>
+              )
+            }
+
+            if (q.data.inputType === "number") {
+              return (
+                <div key={q.id} className="space-y-2 opacity-80">
+                  <div className="text-sm font-medium">{label}</div>
+                  <input
+                    type="number"
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    value={typeof value === "number" ? value : value === undefined ? "" : String(value)}
+                    readOnly
+                    disabled
+                  />
+                </div>
+              )
+            }
+
+            if (q.data.inputType === "multi_select") {
+              const options = Array.isArray(q.data.options) ? q.data.options : []
+              const selected = Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
+
+              return (
+                <div key={q.id} className="space-y-2 opacity-80">
+                  <div className="text-sm font-medium">{label}</div>
+                  <div className="flex flex-col gap-2">
+                    {options.map((opt) => (
+                      <label key={opt} className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={selected.includes(opt)} readOnly disabled />
+                        <span>{opt}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )
+            }
+
+            const options = Array.isArray(q.data.options) ? q.data.options : []
+            return (
+              <div key={q.id} className="space-y-2 opacity-80">
+                <div className="text-sm font-medium">{label}</div>
+                <select
+                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  value={typeof value === "string" ? value : ""}
+                  disabled
+                >
+                  <option value="">Sélectionner...</option>
+                  {options.map((opt: string) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         {questions.map((q) => {

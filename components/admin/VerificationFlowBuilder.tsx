@@ -25,6 +25,7 @@ import { ActionNode } from "@/components/admin/builder/ActionNode"
 import { QuestionNode } from "@/components/admin/builder/QuestionNode"
 import { ResultNode } from "@/components/admin/builder/ResultNode"
 import { AlertNode } from "@/components/admin/builder/AlertNode"
+import { FlowNode } from "@/components/admin/builder/FlowNode"
 import { Button } from "@/components/ui/button"
 
 const nodeTypes = {
@@ -33,6 +34,7 @@ const nodeTypes = {
   actionNode: ActionNode,
   resultNode: ResultNode,
   alertNode: AlertNode,
+  flowNode: FlowNode,
 }
 
 export function VerificationFlowBuilder() {
@@ -117,9 +119,11 @@ export function VerificationFlowBuilder() {
                 ? "conditionNode"
                 : n.type === "action"
                   ? "actionNode"
-                  : n.type === "alert"
-                    ? "alertNode"
-                    : "resultNode",
+                  : n.type === "flow"
+                    ? "flowNode"
+                    : n.type === "alert"
+                      ? "alertNode"
+                      : "resultNode",
           data:
             n.type === "condition"
               ? (() => {
@@ -282,8 +286,9 @@ export function VerificationFlowBuilder() {
 
       const allowed =
         (sourceKind === "questionNode" && (targetKind === "conditionNode" || targetKind === "questionNode")) ||
-        (sourceKind === "conditionNode" && (targetKind === "questionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode")) ||
-        (sourceKind === "actionNode" && (targetKind === "resultNode" || targetKind === "alertNode"))
+        (sourceKind === "conditionNode" &&
+          (targetKind === "questionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
+        (sourceKind === "actionNode" && (targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode"))
 
       if (!allowed) {
         toast.error("Connexion non autorisée")
@@ -564,6 +569,25 @@ export function VerificationFlowBuilder() {
           >
             + Alert
           </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              if (!flowId) return
+              const id = createNodeId("n")
+              const node: Node = {
+                id,
+                type: "flowNode",
+                data: { target: { flowId: "", entry: { type: "start" } } },
+                position: { x: 980, y: 240 },
+              }
+              setRfNodes((prev) => [...prev, node])
+              setIsDirty(true)
+            }}
+            disabled={!flowId}
+          >
+            + Jump
+          </Button>
           <Button type="button" size="sm" onClick={() => openCreate("flow")}>
             + Flow
           </Button>
@@ -612,6 +636,18 @@ export function VerificationFlowBuilder() {
                   startNodeId,
                   version: 1,
                   nodes: rfNodes.map((n) => {
+                    if (n.type === "flowNode") {
+                      const fid = String((n as any)?.data?.target?.flowId || "").trim()
+                      if (!fid) {
+                        throw new Error("Flow jump invalide: choisissez un flow cible")
+                      }
+                      return {
+                        id: String(n.id),
+                        type: "flow",
+                        position: n.position,
+                        data: n.data,
+                      }
+                    }
                     if (n.type === "conditionNode") {
                       const inferred = inferConditionFieldKey(String(n.id))
                       const branches = Array.isArray((n as any)?.data?.branches) ? (n as any).data.branches : []
@@ -1040,6 +1076,22 @@ export function VerificationFlowBuilder() {
                 setIsDirty(true)
                 setContextMenu(null)
               }}
+              onAddFlowNode={() => {
+                if (!flowId) {
+                  setContextMenu(null)
+                  return
+                }
+                const id = createNodeId("n")
+                const node: Node = {
+                  id,
+                  type: "flowNode",
+                  data: { target: { flowId: "", entry: { type: "start" } } },
+                  position: { x: 980, y: 240 },
+                }
+                setRfNodes((prev) => [...prev, node])
+                setIsDirty(true)
+                setContextMenu(null)
+              }}
               onAddFlow={() => {
                 openCreate("flow")
                 setContextMenu(null)
@@ -1162,6 +1214,7 @@ export function VerificationFlowBuilder() {
                 <option value="actionNode">action</option>
                 <option value="resultNode">result</option>
                 <option value="alertNode">alert</option>
+                <option value="flowNode">flow jump</option>
               </select>
             </div>
 
@@ -1663,6 +1716,86 @@ export function VerificationFlowBuilder() {
                     <option value="green">green</option>
                   </select>
                 </div>
+              </div>
+            ) : null}
+
+            {String(nodeForm.type || "questionNode") === "flowNode" ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Flow cible</label>
+                  <select
+                    value={String(nodeForm.data?.target?.flowId || "")}
+                    onChange={(e) => {
+                      const fid = String(e.target.value || "")
+                      setNodeForm((p: any) => ({
+                        ...p,
+                        data: {
+                          ...(p.data || {}),
+                          target: {
+                            ...((p.data || {}).target || {}),
+                            flowId: fid,
+                          },
+                        },
+                      }))
+                    }}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="">Choisir un flow</option>
+                    {flows
+                      .filter((f: any) => String(f._id) !== String(flowId))
+                      .map((f: any) => (
+                        <option key={String(f._id)} value={String(f._id)}>
+                          {String(f.title || f._id)}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Entry</label>
+                  <select
+                    value={String(nodeForm.data?.target?.entry?.type || "start")}
+                    onChange={(e) => {
+                      const t = String(e.target.value || "start")
+                      setNodeForm((p: any) => ({
+                        ...p,
+                        data: {
+                          ...(p.data || {}),
+                          target: {
+                            ...((p.data || {}).target || {}),
+                            entry: t === "node" ? { type: "node", nodeId: "" } : { type: "start" },
+                          },
+                        },
+                      }))
+                    }}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="start">start</option>
+                    <option value="node">node</option>
+                  </select>
+                </div>
+
+                {String(nodeForm.data?.target?.entry?.type || "start") === "node" ? (
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">NodeId (dans le flow cible)</label>
+                    <input
+                      value={String(nodeForm.data?.target?.entry?.nodeId || "")}
+                      onChange={(e) =>
+                        setNodeForm((p: any) => ({
+                          ...p,
+                          data: {
+                            ...(p.data || {}),
+                            target: {
+                              ...((p.data || {}).target || {}),
+                              entry: { type: "node", nodeId: e.target.value },
+                            },
+                          },
+                        }))
+                      }
+                      className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    />
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

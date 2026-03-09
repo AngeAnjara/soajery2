@@ -13,6 +13,7 @@ type BuilderContextMenuProps = {
   onAddCondition: () => void
   onAddAction: () => void
   onAddResult: () => void
+  onAddFlowNode: () => void
   onAddFlow: () => void
   onEdit: () => void
   onSetStart: () => void
@@ -40,6 +41,9 @@ export function BuilderContextMenu(props: BuilderContextMenuProps) {
             </button>
             <button type="button" onClick={props.onAddResult} className="w-full rounded-sm px-3 py-2 text-left hover:bg-muted">
               Nouveau résultat
+            </button>
+            <button type="button" onClick={props.onAddFlowNode} className="w-full rounded-sm px-3 py-2 text-left hover:bg-muted">
+              Jump vers flow
             </button>
             <button type="button" onClick={props.onAddFlow} className="w-full rounded-sm px-3 py-2 text-left hover:bg-muted">
               Nouveau flow

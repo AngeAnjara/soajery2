@@ -122,6 +122,8 @@ export type FlowRunResult = {
   prompt?: string
   redirect?: any
   transition?: any
+  transitionFromNodeId?: string
+  transitionKind?: "condition_transition" | "flow_node"
   resultNodeId?: string
   resultType?: "result" | "alert"
   resultColor?: "red" | "green"
@@ -136,7 +138,7 @@ export type FlowPreRunResult = FlowRunResult & {
 export type TransitionLineageHop = {
   fromFlowId: string
   toFlowId: string
-  kind: "condition_transition" | "redirect"
+  kind: "condition_transition" | "redirect" | "flow_node"
   fromNodeId?: string
 }
 
@@ -180,7 +182,12 @@ export async function runChainedFlows(opts: {
     }
 
     const targetFlowId = String(run.transition.flowId)
-    lineage.push({ fromFlowId: currentFlowId, toFlowId: targetFlowId, kind: "condition_transition" })
+    lineage.push({
+      fromFlowId: currentFlowId,
+      toFlowId: targetFlowId,
+      kind: run.transitionKind || "condition_transition",
+      fromNodeId: run.transitionFromNodeId,
+    })
 
     const nextFlow = await opts.getFlowById(targetFlowId)
     if (!nextFlow) {
@@ -230,7 +237,12 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
         (b: any) => String(b?.key || "").trim() === String(branchKey),
       )
       if (branch?.transition?.flowId) {
-        return { actionType: "transition", transition: branch.transition }
+        return {
+          actionType: "transition",
+          transition: branch.transition,
+          transitionFromNodeId: nodeId,
+          transitionKind: "condition_transition",
+        }
       }
 
       const edges = getOutgoingEdges(flow, node.id)
@@ -240,6 +252,19 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
       if (!chosen?.target) return { nextNodeId: node.id }
       currentNodeId = chosen.target
       continue
+    }
+
+    if (node.type === "flow") {
+      const target = (node as any)?.data?.target
+      if (target?.flowId) {
+        return {
+          actionType: "transition",
+          transition: target,
+          transitionFromNodeId: nodeId,
+          transitionKind: "flow_node",
+        }
+      }
+      return { nextNodeId: nodeId }
     }
 
     if (node.type === "action") {
@@ -340,7 +365,12 @@ export function preRunFlow(flow: FlowDefinition, userAnswers: UserAnswers): Flow
         (b: any) => String(b?.key || "").trim() === String(branchKey),
       )
       if (branch?.transition?.flowId) {
-        return { actionType: "transition", transition: branch.transition }
+        return {
+          actionType: "transition",
+          transition: branch.transition,
+          transitionFromNodeId: nodeId,
+          transitionKind: "condition_transition",
+        }
       }
 
       const edges = getOutgoingEdges(flow, nodeId)
@@ -348,6 +378,19 @@ export function preRunFlow(flow: FlowDefinition, userAnswers: UserAnswers): Flow
       if (!chosen?.target) return { nextNodeId: nodeId }
       currentNodeId = chosen.target
       continue
+    }
+
+    if (node.type === "flow") {
+      const target = (node as any)?.data?.target
+      if (target?.flowId) {
+        return {
+          actionType: "transition",
+          transition: target,
+          transitionFromNodeId: nodeId,
+          transitionKind: "flow_node",
+        }
+      }
+      return { nextNodeId: nodeId }
     }
 
     if (node.type === "action") {

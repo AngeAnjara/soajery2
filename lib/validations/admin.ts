@@ -175,6 +175,22 @@ const flowSchemaObject = z.object({
       }),
       z.object({
         id: z.string().min(1),
+        type: z.literal("flow"),
+        position: z.object({ x: z.number(), y: z.number() }),
+        data: z.object({
+          target: z.object({
+            flowId: z.string().min(1),
+            entry: z
+              .union([
+                z.object({ type: z.literal("start") }),
+                z.object({ type: z.literal("node"), nodeId: z.string().min(1) }),
+              ])
+              .optional(),
+          }),
+        }),
+      }),
+      z.object({
+        id: z.string().min(1),
         type: z.literal("result"),
         position: z.object({ x: z.number(), y: z.number() }),
         data: z.object({

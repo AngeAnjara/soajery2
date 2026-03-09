@@ -1,3 +1,5 @@
+import type { RedirectPayload, FlowTransitionTarget } from "@/types/flow"
+
 export type LotissementDTO = {
   _id: string
   name: string

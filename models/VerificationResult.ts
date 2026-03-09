@@ -18,7 +18,7 @@ export interface IVerificationResult extends mongoose.Document {
   transitionLineage?: {
     fromFlowId: string
     toFlowId: string
-    kind: "condition_transition" | "redirect"
+    kind: "condition_transition" | "redirect" | "flow_node"
     fromNodeId?: string
   }[]
   summary: string
