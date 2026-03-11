@@ -82,6 +82,7 @@ export type VerificationFlowDTO = {
   title: string
   description?: string
   priceForDetailedReport: number
+  hidden?: boolean
   nodes: any[]
   edges: any[]
   version: number

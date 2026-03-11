@@ -6,6 +6,7 @@ export interface IVerificationFlow extends mongoose.Document {
   title: string
   description?: string
   priceForDetailedReport: number
+  hidden?: boolean
   nodes: FlowDefinition["nodes"]
   edges: FlowDefinition["edges"]
   startNodeId: string
@@ -18,6 +19,7 @@ const VerificationFlowSchema = new Schema<IVerificationFlow>(
     title: { type: String, required: true },
     description: { type: String },
     priceForDetailedReport: { type: Number, required: true, min: 0 },
+    hidden: { type: Boolean, default: false },
     nodes: [{ type: Schema.Types.Mixed }],
     edges: [{ type: Schema.Types.Mixed }],
     startNodeId: { type: String, required: true },

@@ -40,6 +40,22 @@ export function evaluateRule(rule: ConditionRule, answers: UserAnswers) {
   const actual = answers[rule.fieldKey]
   const expectedRaw = rule.value
 
+  const asQuantityMap = (v: unknown): Record<string, number> | undefined => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return undefined
+    const entries = Object.entries(v as any)
+    if (!entries.length) return undefined
+    const out: Record<string, number> = {}
+    for (const [k, val] of entries) {
+      const key = String(k)
+      const n = typeof val === "number" && Number.isFinite(val) ? val : Number(val)
+      if (!Number.isFinite(n)) continue
+      out[key] = Math.max(0, Math.floor(n))
+    }
+    return out
+  }
+
+  const quantity = asQuantityMap(actual)
+
   const normalizeBooleanLike = (v: unknown): boolean | undefined => {
     if (typeof v === "boolean") return v
     if (typeof v === "string") {
@@ -56,28 +72,40 @@ export function evaluateRule(rule: ConditionRule, answers: UserAnswers) {
   switch (rule.operator) {
     case "equals": {
       if (expectedBool !== undefined && actualBool !== undefined) return actualBool === expectedBool
+      if (quantity) {
+        const key = String(expectedRaw || "")
+        return (quantity[key] || 0) > 0
+      }
       if (Array.isArray(actual)) return actual.includes(expectedRaw)
       return String(actual ?? "") === expectedRaw
     }
     case "not_equals": {
       if (expectedBool !== undefined && actualBool !== undefined) return actualBool !== expectedBool
+      if (quantity) {
+        const key = String(expectedRaw || "")
+        return (quantity[key] || 0) <= 0
+      }
       if (Array.isArray(actual)) return !actual.includes(expectedRaw)
       return String(actual ?? "") !== expectedRaw
     }
     case "includes": {
       if (expectedBool !== undefined && actualBool !== undefined) return actualBool === expectedBool
+      if (quantity) {
+        const key = String(expectedRaw || "")
+        return (quantity[key] || 0) > 0
+      }
       if (Array.isArray(actual)) return actual.includes(expectedRaw)
       if (typeof actual === "string") return actual.includes(expectedRaw)
       return false
     }
     case "greater_than": {
-      const a = coerceToNumber(actual)
+      const a = quantity ? coerceToNumber(quantity[String(expectedRaw || "")]) : coerceToNumber(actual)
       const b = coerceToNumber(expectedRaw)
       if (a === undefined || b === undefined) return false
       return a > b
     }
     case "less_than": {
-      const a = coerceToNumber(actual)
+      const a = quantity ? coerceToNumber(quantity[String(expectedRaw || "")]) : coerceToNumber(actual)
       const b = coerceToNumber(expectedRaw)
       if (a === undefined || b === undefined) return false
       return a < b
@@ -123,7 +151,7 @@ export type FlowRunResult = {
   redirect?: any
   transition?: any
   transitionFromNodeId?: string
-  transitionKind?: "condition_transition" | "flow_node"
+  transitionKind?: "flow_node"
   resultNodeId?: string
   resultType?: "result" | "alert"
   resultColor?: "red" | "green"
@@ -138,7 +166,7 @@ export type FlowPreRunResult = FlowRunResult & {
 export type TransitionLineageHop = {
   fromFlowId: string
   toFlowId: string
-  kind: "condition_transition" | "redirect" | "flow_node"
+  kind: "redirect" | "flow_node"
   fromNodeId?: string
 }
 
@@ -185,7 +213,7 @@ export async function runChainedFlows(opts: {
     lineage.push({
       fromFlowId: currentFlowId,
       toFlowId: targetFlowId,
-      kind: run.transitionKind || "condition_transition",
+      kind: run.transitionKind || "flow_node",
       fromNodeId: run.transitionFromNodeId,
     })
 
@@ -232,18 +260,6 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
 
     if (node.type === "condition") {
       const branchKey = evaluateConditionNode(node, userAnswers)
-
-      const branch = (Array.isArray((node as any)?.data?.branches) ? (node as any).data.branches : []).find(
-        (b: any) => String(b?.key || "").trim() === String(branchKey),
-      )
-      if (branch?.transition?.flowId) {
-        return {
-          actionType: "transition",
-          transition: branch.transition,
-          transitionFromNodeId: nodeId,
-          transitionKind: "condition_transition",
-        }
-      }
 
       const edges = getOutgoingEdges(flow, node.id)
       const chosen =
@@ -360,18 +376,6 @@ export function preRunFlow(flow: FlowDefinition, userAnswers: UserAnswers): Flow
         return { nextNodeId: nodeId }
       }
       const branchKey = evaluateConditionNode(node as any, userAnswers)
-
-      const branch = (Array.isArray((node as any)?.data?.branches) ? (node as any).data.branches : []).find(
-        (b: any) => String(b?.key || "").trim() === String(branchKey),
-      )
-      if (branch?.transition?.flowId) {
-        return {
-          actionType: "transition",
-          transition: branch.transition,
-          transitionFromNodeId: nodeId,
-          transitionKind: "condition_transition",
-        }
-      }
 
       const edges = getOutgoingEdges(flow, nodeId)
       const chosen = edges.find((e) => edgeBranchKey(e) === String(branchKey)) || edges.find((e) => !edgeBranchKey(e))
@@ -491,6 +495,9 @@ function isAnswerProvided(value: unknown) {
   if (typeof value === "number") return true
   if (typeof value === "boolean") return true
   if (Array.isArray(value)) return value.length > 0
+  if (typeof value === "object") {
+    return Object.values(value as any).some((v) => typeof v === "number" && v > 0)
+  }
   return false
 }
 

@@ -28,7 +28,8 @@ export function FlowSelector({ onSelect }: Props) {
         }
 
         if (mounted) {
-          setFlows(data.flows || [])
+          const list = Array.isArray(data?.flows) ? data.flows : []
+          setFlows(list.filter((f: any) => !(f as any)?.hidden))
         }
       } catch (err: any) {
         toast.error(err?.message || "Erreur lors du chargement des flux")

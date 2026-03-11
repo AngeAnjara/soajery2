@@ -8,8 +8,15 @@ export type QuestionNodeData = {
   label: string
   fieldKey: string
   inputType: "boolean" | "select" | "multi_select" | "text" | "number"
-  options?: string[]
+  allowQuantity?: boolean
+  options?: string[] | MultiSelectOption[]
   aiMetadata?: AiMetadata
+}
+
+export type MultiSelectOption = {
+  id: string
+  label: string
+  maxCount?: number
 }
 
 export type ConditionRule = {
@@ -23,7 +30,6 @@ export type ConditionNodeData = {
     key: string
     logic: "AND" | "OR"
     rules: ConditionRule[]
-    transition?: FlowTransitionTarget
   }[]
   fallbackBranchKey?: string
 }
@@ -86,7 +92,7 @@ export type FlowDefinition = {
   startNodeId: string
 }
 
-export type UserAnswers = Record<string, string | string[] | boolean | number>
+export type UserAnswers = Record<string, string | string[] | boolean | number | Record<string, number>>
 
 export type FlowRunResultDTO = {
   resultId: string

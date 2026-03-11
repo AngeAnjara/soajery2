@@ -11,7 +11,7 @@ import { runChainedFlows } from "@/services/flowRunner"
 export async function GET() {
   try {
     await connectDB()
-    const flows = await VerificationFlow.find({ status: "published" }).lean()
+    const flows = await VerificationFlow.find({ status: "published", hidden: { $ne: true } }).lean()
     return NextResponse.json({ flows })
   } catch (error) {
     return handleApiError(error)

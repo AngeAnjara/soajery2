@@ -53,7 +53,13 @@ export function VerificationFlowBuilder() {
   const [isDirty, setIsDirty] = React.useState(false)
   const [startNodeId, setStartNodeId] = React.useState<string>("")
 
-  const [flowForm, setFlowForm] = React.useState({ title: "", description: "", priceForDetailedReport: 0, status: "draft" as "draft" | "published" })
+  const [flowForm, setFlowForm] = React.useState({
+    title: "",
+    description: "",
+    priceForDetailedReport: 0,
+    hidden: false,
+    status: "draft" as "draft" | "published",
+  })
   const [nodeForm, setNodeForm] = React.useState<any>({})
   const [nodeOptionsText, setNodeOptionsText] = React.useState<string>("")
 
@@ -100,6 +106,7 @@ export function VerificationFlowBuilder() {
         title: flow.title || "",
         description: flow.description || "",
         priceForDetailedReport: Number(flow.priceForDetailedReport || 0),
+        hidden: !!(flow as any).hidden,
         status: (flow.status || "draft") as any,
       })
 
@@ -202,13 +209,20 @@ export function VerificationFlowBuilder() {
     setEditing(null)
 
     if (e === "flow") {
-      setFlowForm({ title: "", description: "", priceForDetailedReport: 0, status: "draft" })
+      setFlowForm({ title: "", description: "", priceForDetailedReport: 0, hidden: false, status: "draft" })
     }
 
     if (e === "node") {
       setNodeForm(kind || {})
       const opts = Array.isArray(kind?.data?.options) ? kind.data.options : []
-      setNodeOptionsText(opts.join("\n"))
+      setNodeOptionsText(
+        opts
+          .map((o: any) =>
+            typeof o === "string" ? o : `${String(o?.label || o?.id || "")}${o?.maxCount ? `|${Number(o.maxCount)}` : ""}`,
+          )
+          .filter(Boolean)
+          .join("\n"),
+      )
     }
 
     setOpen(true)
@@ -257,6 +271,7 @@ export function VerificationFlowBuilder() {
         title: row.title || "",
         description: row.description || "",
         priceForDetailedReport: row.priceForDetailedReport || 0,
+        hidden: !!row.hidden,
         status: (row.status || "draft") as any,
       })
     }
@@ -264,7 +279,14 @@ export function VerificationFlowBuilder() {
     if (e === "node") {
       setNodeForm(row)
       const opts = Array.isArray(row?.data?.options) ? row.data.options : []
-      setNodeOptionsText(opts.join("\n"))
+      setNodeOptionsText(
+        opts
+          .map((o: any) =>
+            typeof o === "string" ? o : `${String(o?.label || o?.id || "")}${o?.maxCount ? `|${Number(o.maxCount)}` : ""}`,
+          )
+          .filter(Boolean)
+          .join("\n"),
+      )
     }
 
     setOpen(true)
@@ -320,14 +342,12 @@ export function VerificationFlowBuilder() {
           return prev.map((n) => {
             if (String(n.id) !== target) return n
             const branches = Array.isArray((n as any)?.data?.branches) ? (n as any).data.branches : []
-            const nextBranches = branches.length
-              ? [...branches]
-              : [
-                  { key: "branch_1", logic: "AND", rules: [] },
-                  { key: "branch_2", logic: "AND", rules: [] },
-                  { key: "branch_3", logic: "AND", rules: [] },
-                  { key: "branch_4", logic: "AND", rules: [] },
-                ]
+            const nextBranches = branches.length ? [...branches] : []
+
+            if (!nextBranches.length) {
+              toast.error("Ajoutez d'abord une branche dans le node condition")
+              return n
+            }
 
             const firstRules = Array.isArray(nextBranches?.[0]?.rules) ? nextBranches[0].rules : []
             if (firstRules.some((r: any) => String(r?.fieldKey || "") === questionFieldKey)) return n
@@ -652,10 +672,6 @@ export function VerificationFlowBuilder() {
                       const inferred = inferConditionFieldKey(String(n.id))
                       const branches = Array.isArray((n as any)?.data?.branches) ? (n as any).data.branches : []
 
-                      if (!branches.length) {
-                        throw new Error("Définissez au moins une branche pour la condition")
-                      }
-
                       const seenKeys = new Set<string>()
 
                       const normalizedBranches = branches
@@ -672,18 +688,6 @@ export function VerificationFlowBuilder() {
                           const logic = String(b?.logic || "AND") as any
                           const rules = Array.isArray(b?.rules) ? b.rules : []
 
-                          const transition = b?.transition && typeof b.transition === "object" ? b.transition : undefined
-                          const normalizedTransition =
-                            transition && String((transition as any)?.flowId || "").trim()
-                              ? {
-                                  flowId: String((transition as any).flowId),
-                                  entry:
-                                    transition?.entry && typeof transition.entry === "object"
-                                      ? (transition.entry as any)
-                                      : undefined,
-                                }
-                              : undefined
-
                           const normalizedRules = rules
                             .map((r: any) => {
                               let fieldKey = String(r?.fieldKey || "")
@@ -699,7 +703,7 @@ export function VerificationFlowBuilder() {
                             })
                             .filter((r: any) => r.fieldKey && String(r.value ?? "").trim() !== "")
 
-                          return { key, logic, rules: normalizedRules, ...(normalizedTransition ? { transition: normalizedTransition } : {}) }
+                          return { key, logic, rules: normalizedRules }
                         })
 
 
@@ -805,6 +809,7 @@ export function VerificationFlowBuilder() {
           title: flowForm.title,
           description: flowForm.description || undefined,
           priceForDetailedReport: Number(flowForm.priceForDetailedReport),
+          hidden: !!flowForm.hidden,
           status: flowForm.status,
         }
 
@@ -843,12 +848,32 @@ export function VerificationFlowBuilder() {
       }
 
       if (entity === "node") {
-        const normalizedOptions = nodeOptionsText
+        const optionLines = nodeOptionsText
           .split("\n")
           .map((x) => x.trim())
           .filter(Boolean)
 
-        const shouldApplyOptions = ["select", "multi_select"].includes(String(nodeForm?.data?.inputType || ""))
+        const inputType = String(nodeForm?.data?.inputType || "")
+        const allowQuantity = !!nodeForm?.data?.allowQuantity
+        const shouldApplyOptions = ["select", "multi_select"].includes(inputType)
+
+        const normalizedOptions =
+          inputType === "multi_select" && allowQuantity
+            ? optionLines
+                .map((line) => {
+                  const [rawLabel, rawMax] = line.split("|")
+                  const label = String(rawLabel || "").trim()
+                  if (!label) return null
+                  const maxCount = rawMax !== undefined && String(rawMax).trim() !== "" ? Number(String(rawMax).trim()) : undefined
+                  const cleanMax = typeof maxCount === "number" && Number.isFinite(maxCount) && maxCount > 0 ? Math.floor(maxCount) : undefined
+                  return {
+                    id: label,
+                    label,
+                    ...(cleanMax ? { maxCount: cleanMax } : {}),
+                  }
+                })
+                .filter(Boolean)
+            : optionLines
 
         const nodeId = mode === "edit" ? String(editing?.id) : createNodeId("n")
         const nodeType = String(nodeForm?.type || "questionNode")
@@ -1186,6 +1211,15 @@ export function VerificationFlowBuilder() {
               />
             </div>
 
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={!!flowForm.hidden}
+                onChange={(e) => setFlowForm((p) => ({ ...p, hidden: e.target.checked }))}
+              />
+              Cacher ce flow dans la liste initiale (utilisable via jump)
+            </label>
+
             <div className="space-y-1">
               <label className="text-sm font-medium">Statut</label>
               <select
@@ -1250,6 +1284,25 @@ export function VerificationFlowBuilder() {
                     <option value="number">number</option>
                   </select>
                 </div>
+
+                {String(nodeForm.data?.inputType || "") === "multi_select" ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!nodeForm.data?.allowQuantity}
+                      onChange={(e) =>
+                        setNodeForm((p: any) => ({
+                          ...p,
+                          data: {
+                            ...(p.data || {}),
+                            allowQuantity: e.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    Mode quantité (compteur +/-)
+                  </label>
+                ) : null}
                 <div className="space-y-1">
                   <label className="text-sm font-medium">options (une par ligne)</label>
                   <textarea
@@ -1330,16 +1383,7 @@ export function VerificationFlowBuilder() {
               <div className="space-y-3">
                 {(() => {
                   const branches = Array.isArray(nodeForm.data?.branches) ? nodeForm.data.branches : []
-                  const ensureMinBranches = () => {
-                    if (branches.length >= 4) return branches
-                    const next = [...branches]
-                    for (let i = next.length; i < 4; i++) {
-                      next.push({ key: `branch_${i + 1}`, logic: "AND", rules: [] })
-                    }
-                    return next
-                  }
-
-                  const normalizedBranches = ensureMinBranches()
+                  const normalizedBranches = branches
 
                   const setBranches = (nextBranches: any[]) => {
                     setNodeForm((p: any) => ({
@@ -1404,77 +1448,6 @@ export function VerificationFlowBuilder() {
                               </Button>
                             </div>
 
-                            <div className="grid gap-2 sm:grid-cols-3">
-                              <select
-                                value={String(b?.transition?.flowId || "")}
-                                onChange={(e) => {
-                                  const flowId = String(e.target.value || "")
-                                  const next = [...normalizedBranches]
-                                  const prevBranch = next[bIdx] || {}
-                                  next[bIdx] = {
-                                    ...prevBranch,
-                                    transition: flowId
-                                      ? { flowId, entry: { type: "start" } }
-                                      : undefined,
-                                  }
-                                  setBranches(next)
-                                }}
-                                className="h-10 rounded-md border bg-background px-3 text-sm"
-                              >
-                                <option value="">(pas de transition)</option>
-                                {flows
-                                  .filter((f: any) => String(f?._id || "") !== String(flowId || ""))
-                                  .map((f: any) => (
-                                    <option key={String(f._id)} value={String(f._id)}>
-                                      {String(f.title || f._id)}
-                                    </option>
-                                  ))}
-                              </select>
-
-                              <select
-                                value={String(b?.transition?.entry?.type || "start")}
-                                onChange={(e) => {
-                                  const t = String(e.target.value || "start")
-                                  const next = [...normalizedBranches]
-                                  const prevBranch = next[bIdx] || {}
-                                  const tr = prevBranch.transition && typeof prevBranch.transition === "object" ? prevBranch.transition : undefined
-                                  if (!tr?.flowId) return
-                                  next[bIdx] = {
-                                    ...prevBranch,
-                                    transition: {
-                                      ...tr,
-                                      entry: t === "node" ? { type: "node", nodeId: "" } : { type: "start" },
-                                    },
-                                  }
-                                  setBranches(next)
-                                }}
-                                disabled={!b?.transition?.flowId}
-                                className="h-10 rounded-md border bg-background px-3 text-sm"
-                              >
-                                <option value="start">entrée: start</option>
-                                <option value="node">entrée: nodeId</option>
-                              </select>
-
-                              <input
-                                value={String(b?.transition?.entry?.type === "node" ? b?.transition?.entry?.nodeId || "" : "")}
-                                onChange={(e) => {
-                                  const next = [...normalizedBranches]
-                                  const prevBranch = next[bIdx] || {}
-                                  const tr = prevBranch.transition && typeof prevBranch.transition === "object" ? prevBranch.transition : undefined
-                                  if (!tr?.flowId) return
-                                  if (String(tr?.entry?.type || "start") !== "node") return
-                                  next[bIdx] = {
-                                    ...prevBranch,
-                                    transition: { ...tr, entry: { type: "node", nodeId: e.target.value } },
-                                  }
-                                  setBranches(next)
-                                }}
-                                disabled={!b?.transition?.flowId || String(b?.transition?.entry?.type || "start") !== "node"}
-                                placeholder="nodeId (optionnel)"
-                                className="h-10 rounded-md border bg-background px-3 text-sm"
-                              />
-                            </div>
-
                             <div className="space-y-2">
                               {(Array.isArray(b?.rules) ? b.rules : []).map((r: any, idx: number) => (
                                 <div key={idx} className="grid gap-2 sm:grid-cols-3">
@@ -1535,7 +1508,6 @@ export function VerificationFlowBuilder() {
                                   </Button>
                                 </div>
                               ))}
-
                               <Button
                                 type="button"
                                 variant="outline"

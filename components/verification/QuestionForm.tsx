@@ -17,8 +17,11 @@ type Props = {
 export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props) {
   const [questions, setQuestions] = React.useState<Extract<FlowNodeDTO, { type: "question" }>[]>([])
   const [historyQuestions, setHistoryQuestions] = React.useState<Extract<FlowNodeDTO, { type: "question" }>[]>([])
-  const [historyAnswers, setHistoryAnswers] = React.useState<Record<string, string | string[] | boolean | number>>({})
-  const [answers, setAnswers] = React.useState<Record<string, string | string[] | boolean | number>>({})
+  const [historyAnswers, setHistoryAnswers] = React.useState<Record<string, string | string[] | boolean | number | Record<string, number>>>({})
+  const [answers, setAnswers] = React.useState<Record<string, string | string[] | boolean | number | Record<string, number>>>({})
+  const [confirmedAnswers, setConfirmedAnswers] = React.useState<
+    Record<string, string | string[] | boolean | number | Record<string, number>>
+  >({})
   const [loading, setLoading] = React.useState(true)
   const [submitting, setSubmitting] = React.useState(false)
   const [terminalAlert, setTerminalAlert] = React.useState(false)
@@ -32,6 +35,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
   const evalControllerRef = React.useRef<AbortController | null>(null)
   const autoSubmitKeyRef = React.useRef<string>("")
   const prevFlowIdRef = React.useRef<string>(flowId)
+  const didInitialLoadRef = React.useRef(false)
 
   const handleContinuation = React.useCallback(
     async (res: FlowRunResultDTO) => {
@@ -49,14 +53,19 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         onRedirect(nextFlowId)
         return true
       }
-
       return false
     },
     [onRedirect],
   )
 
+  React.useEffect(() => {
+    const hasActiveMultiSelect = questions.some((q) => String((q as any)?.data?.inputType || "") === "multi_select")
+    if (hasActiveMultiSelect) return
+    setConfirmedAnswers(answers)
+  }, [answers, questions])
+
   const fetchQuestions = React.useCallback(
-    async (nextAnswers: Record<string, string | string[] | boolean | number>) => {
+    async (nextAnswers: Record<string, string | string[] | boolean | number | Record<string, number>>) => {
       fetchControllerRef.current?.abort()
       const controller = new AbortController()
       fetchControllerRef.current = controller
@@ -112,6 +121,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       setHistoryAnswers((prev) => ({ ...prev, ...answers }))
 
       setAnswers({})
+      setConfirmedAnswers({})
       setTerminalAlert(false)
       setPreview(null)
       setAutoSubmitError(null)
@@ -135,6 +145,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         }
       } finally {
         if (mounted) {
+          didInitialLoadRef.current = true
           setLoading(false)
         }
       }
@@ -148,11 +159,18 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
   }, [flowId])
 
   React.useEffect(() => {
+    if (!didInitialLoadRef.current) return
+    if (loading) return
+
+    const hasActiveMultiSelect = questions.some((q) => String((q as any)?.data?.inputType || "") === "multi_select")
+    const pendingMultiSelectChange = hasActiveMultiSelect && JSON.stringify(answers) !== JSON.stringify(confirmedAnswers)
+    if (pendingMultiSelectChange) return
+
     let cancelled = false
     const t = setTimeout(() => {
       ;(async () => {
         try {
-          const r = await fetchQuestions(answers)
+          const r = await fetchQuestions(confirmedAnswers)
           if (!cancelled) {
             if (!r.redirected) {
               setQuestions(r.questions as any)
@@ -172,9 +190,9 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       cancelled = true
       clearTimeout(t)
     }
-  }, [answers, fetchQuestions])
+  }, [answers, confirmedAnswers, fetchQuestions, loading])
 
-  const updateAnswer = (fieldKey: string, value: string | string[] | boolean | number) => {
+  const updateAnswer = (fieldKey: string, value: string | string[] | boolean | number | Record<string, number>) => {
     setAnswers((prev) => ({ ...prev, [fieldKey]: value }))
   }
 
@@ -183,7 +201,11 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
     if (submitting) return
     if (autoSubmitError) return
 
-    const key = JSON.stringify({ flowId, answers, t: preview?.resultType, id: (preview as any)?.resultNodeId })
+    const hasActiveMultiSelect = questions.some((q) => String((q as any)?.data?.inputType || "") === "multi_select")
+    const pendingMultiSelectChange = hasActiveMultiSelect && JSON.stringify(answers) !== JSON.stringify(confirmedAnswers)
+    if (pendingMultiSelectChange) return
+
+    const key = JSON.stringify({ flowId, answers: confirmedAnswers, t: preview?.resultType, id: (preview as any)?.resultNodeId })
     if (autoSubmitKeyRef.current === key) return
     autoSubmitKeyRef.current = key
 
@@ -198,7 +220,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         const res = await fetch("/api/verification", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ flowId, answers }),
+          body: JSON.stringify({ flowId, answers: confirmedAnswers }),
           signal: controller.signal,
         })
 
@@ -221,7 +243,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         setSubmitting(false)
       }
     })()
-  }, [terminalAlert, submitting, autoSubmitError, flowId, answers, onEvaluated, preview])
+  }, [terminalAlert, submitting, autoSubmitError, flowId, answers, confirmedAnswers, onEvaluated, preview, questions])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -234,7 +256,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       const res = await fetch("/api/verification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ flowId, answers }),
+        body: JSON.stringify({ flowId, answers: confirmedAnswers }),
       })
 
       const data = await res.json()
@@ -267,6 +289,9 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       </div>
     )
   }
+
+  const hasActiveMultiSelect = questions.some((q) => String((q as any)?.data?.inputType || "") === "multi_select")
+  const pendingMultiSelectChange = hasActiveMultiSelect && JSON.stringify(answers) !== JSON.stringify(confirmedAnswers)
 
   return (
     <form onSubmit={submit} className="space-y-6 rounded-xl border bg-card p-6">
@@ -332,25 +357,52 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
             }
 
             if (q.data.inputType === "multi_select") {
-              const options = Array.isArray(q.data.options) ? q.data.options : []
-              const selected = Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
+              const rawOptions = Array.isArray(q.data.options) ? q.data.options : []
+              const options = rawOptions
+                .map((o: any) => {
+                  if (typeof o === "string") return { id: o, label: o, maxCount: undefined as number | undefined }
+                  const id = String(o?.id || o?.label || "").trim()
+                  const label = String(o?.label || o?.id || "").trim()
+                  const max = o?.maxCount
+                  const maxCount = typeof max === "number" && Number.isFinite(max) && max > 0 ? Math.floor(max) : undefined
+                  if (!id || !label) return null
+                  return { id, label, maxCount }
+                })
+                .filter(Boolean) as { id: string; label: string; maxCount?: number }[]
+
+              const counts: Record<string, number> =
+                value && typeof value === "object" && !Array.isArray(value)
+                  ? Object.fromEntries(
+                      Object.entries(value as any).map(([k, v]) => [String(k), typeof v === "number" && Number.isFinite(v) ? v : 0]),
+                    )
+                  : Array.isArray(value)
+                    ? (value.filter((v): v is string => typeof v === "string").reduce((acc: any, v: string) => {
+                        acc[v] = (acc[v] || 0) + 1
+                        return acc
+                      }, {}) as Record<string, number>)
+                    : {}
 
               return (
                 <div key={q.id} className="space-y-2 opacity-80">
                   <div className="text-sm font-medium">{label}</div>
                   <div className="flex flex-col gap-2">
-                    {options.map((opt) => (
-                      <label key={opt} className="flex items-center gap-2 text-sm">
-                        <input type="checkbox" checked={selected.includes(opt)} readOnly disabled />
-                        <span>{opt}</span>
-                      </label>
-                    ))}
+                    {options.map((opt) => {
+                      const c = counts[opt.id] || 0
+                      return (
+                        <div key={opt.id} className="flex items-center justify-between gap-3 rounded-md border bg-background/50 px-3 py-2">
+                          <div className="min-w-0 truncate text-sm">{opt.label}</div>
+                          <div className="w-10 text-right text-sm tabular-nums">{c}</div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )
             }
 
-            const options = Array.isArray(q.data.options) ? q.data.options : []
+            const options = (Array.isArray(q.data.options) ? q.data.options : [])
+              .map((o: any) => (typeof o === "string" ? o : String(o?.label || o?.id || "").trim()))
+              .filter((x: any) => typeof x === "string" && x.trim() !== "") as string[]
             return (
               <div key={q.id} className="space-y-2 opacity-80">
                 <div className="text-sm font-medium">{label}</div>
@@ -437,11 +489,58 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
           }
 
           if (q.data.inputType === "multi_select") {
-            const options = Array.isArray(q.data.options) ? q.data.options : []
-            const selected = Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
+            const allowQuantity = !!(q as any)?.data?.allowQuantity
 
-            const toggle = (opt: string) => {
-              const next = selected.includes(opt) ? selected.filter((x) => x !== opt) : [...selected, opt]
+            if (!allowQuantity) {
+              const options = (Array.isArray(q.data.options) ? q.data.options : [])
+                .map((o: any) => (typeof o === "string" ? o : String(o?.label || o?.id || "").trim()))
+                .filter((x: any) => typeof x === "string" && x.trim() !== "") as string[]
+
+              const selected = Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
+              const toggle = (opt: string) => {
+                const next = selected.includes(opt) ? selected.filter((x) => x !== opt) : [...selected, opt]
+                updateAnswer(fieldKey, next)
+              }
+
+              return (
+                <div key={q.id} className="space-y-2">
+                  <div className="text-sm font-medium">{label}</div>
+                  <div className="flex flex-col gap-2">
+                    {options.map((opt) => (
+                      <label key={opt} className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
+                        <span>{opt}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )
+            }
+
+            const rawOptions = Array.isArray(q.data.options) ? q.data.options : []
+            const options = rawOptions
+              .map((o: any) => {
+                if (typeof o === "string") return { id: o, label: o, maxCount: undefined as number | undefined }
+                const id = String(o?.id || o?.label || "").trim()
+                const label = String(o?.label || o?.id || "").trim()
+                const max = o?.maxCount
+                const maxCount = typeof max === "number" && Number.isFinite(max) && max > 0 ? Math.floor(max) : undefined
+                if (!id || !label) return null
+                return { id, label, maxCount }
+              })
+              .filter(Boolean) as { id: string; label: string; maxCount?: number }[]
+
+            const counts: Record<string, number> =
+              value && typeof value === "object" && !Array.isArray(value)
+                ? Object.fromEntries(
+                    Object.entries(value as any).map(([k, v]) => [String(k), typeof v === "number" && Number.isFinite(v) ? v : 0]),
+                  )
+                : {}
+
+            const setCount = (optId: string, nextCount: number) => {
+              const safe = Math.max(0, Math.floor(nextCount || 0))
+              const next = { ...counts, [optId]: safe }
+              if (!safe) delete (next as any)[optId]
               updateAnswer(fieldKey, next)
             }
 
@@ -449,18 +548,39 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
               <div key={q.id} className="space-y-2">
                 <div className="text-sm font-medium">{label}</div>
                 <div className="flex flex-col gap-2">
-                  {options.map((opt) => (
-                    <label key={opt} className="flex cursor-pointer items-center gap-2 text-sm">
-                      <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
-                      <span>{opt}</span>
-                    </label>
-                  ))}
+                  {options.map((opt) => {
+                    const current = counts[opt.id] || 0
+                    const maxed = typeof opt.maxCount === "number" ? current >= opt.maxCount : false
+
+                    return (
+                      <div key={opt.id} className="flex items-center justify-between gap-3 rounded-md border bg-background/50 px-3 py-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium">{opt.label}</div>
+                          {typeof opt.maxCount === "number" ? (
+                            <div className="text-xs text-muted-foreground">max: {opt.maxCount}</div>
+                          ) : null}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={() => setCount(opt.id, current - 1)} disabled={current <= 0}>
+                            -
+                          </Button>
+                          <div className="w-8 text-center text-sm tabular-nums">{current}</div>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setCount(opt.id, current + 1)} disabled={maxed}>
+                            +
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )
           }
 
-          const options = Array.isArray(q.data.options) ? q.data.options : []
+          const options = (Array.isArray(q.data.options) ? q.data.options : [])
+            .map((o: any) => (typeof o === "string" ? o : String(o?.label || o?.id || "").trim()))
+            .filter((x: any) => typeof x === "string" && x.trim() !== "") as string[]
 
           return (
             <div key={q.id} className="space-y-2">
@@ -481,6 +601,18 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
           )
         })}
       </div>
+
+      {pendingMultiSelectChange ? (
+        <Button
+          type="button"
+          className="w-full"
+          onClick={() => {
+            setConfirmedAnswers(answers)
+          }}
+        >
+          Valider les sélections
+        </Button>
+      ) : null}
 
       {preview?.resultType === "alert" && preview.resultDescription ? (
         <div className="rounded-lg border p-4">

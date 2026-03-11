@@ -12,10 +12,15 @@ export function ConditionNode({ data }: NodeProps<ConditionNodeData>) {
   const branches = Array.isArray(data?.branches) ? data.branches : []
   const previewRules = Array.isArray(branches?.[0]?.rules) ? branches[0].rules : []
   const branchKeys = branches.map((b) => String(b.key || "").trim()).filter(Boolean)
-  const handleKeys = branchKeys.length ? branchKeys.slice(0, 6) : ["branch_1", "branch_2", "branch_3", "branch_4"]
+  const handleKeys = branchKeys
+
+  const minHeight = 120 + Math.max(0, handleKeys.length - 1) * 28
 
   return (
-    <div className="relative overflow-hidden rounded-xl border bg-card p-3 text-foreground shadow-sm">
+    <div
+      className="relative overflow-hidden rounded-xl border bg-card p-3 text-foreground shadow-sm"
+      style={{ minHeight }}
+    >
       <div className="absolute left-0 top-0 h-full w-1 bg-green-500" />
 
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -47,7 +52,7 @@ export function ConditionNode({ data }: NodeProps<ConditionNodeData>) {
       <Handle type="target" position={Position.Left} className="!h-3 !w-3 !border-2 !border-background !bg-green-500" />
 
       {handleKeys.map((key, idx) => {
-        const top = handleKeys.length === 1 ? 50 : 25 + (idx * 50) / (handleKeys.length - 1)
+        const top = ((idx + 1) * 100) / (handleKeys.length + 1)
         const isFallback = String(data?.fallbackBranchKey || "") === key
 
         return (

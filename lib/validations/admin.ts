@@ -45,6 +45,7 @@ const flowSchemaObject = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   priceForDetailedReport: z.number(),
+  hidden: z.boolean().optional(),
   nodes: z.array(
     z.discriminatedUnion("type", [
       z.object({
@@ -55,7 +56,19 @@ const flowSchemaObject = z.object({
           label: z.string().min(1),
           fieldKey: z.string().min(1),
           inputType: z.enum(["boolean", "select", "multi_select", "text", "number"]),
-          options: z.array(z.string()).optional(),
+          allowQuantity: z.boolean().optional(),
+          options: z
+            .union([
+              z.array(z.string()),
+              z.array(
+                z.object({
+                  id: z.string().min(1),
+                  label: z.string().min(1),
+                  maxCount: z.number().int().positive().optional(),
+                }),
+              ),
+            ])
+            .optional(),
           aiMetadata: z
             .object({
               tag: z.string(),
@@ -83,17 +96,6 @@ const flowSchemaObject = z.object({
                       value: z.string().min(1),
                     }),
                   ),
-                  transition: z
-                    .object({
-                      flowId: z.string().min(1),
-                      entry: z
-                        .union([
-                          z.object({ type: z.literal("start") }),
-                          z.object({ type: z.literal("node"), nodeId: z.string().min(1) }),
-                        ])
-                        .optional(),
-                    })
-                    .optional(),
                 }),
               )
               .optional(),

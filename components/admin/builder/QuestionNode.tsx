@@ -7,7 +7,7 @@ type QuestionNodeData = {
   label: string
   fieldKey: string
   inputType: "boolean" | "select" | "multi_select" | "text" | "number"
-  options?: string[]
+  options?: string[] | { id: string; label: string; maxCount?: number }[]
   aiMetadata?: {
     tag: string
     weight: number
@@ -16,7 +16,9 @@ type QuestionNodeData = {
 }
 
 export function QuestionNode({ data }: NodeProps<QuestionNodeData>) {
-  const options = Array.isArray(data?.options) ? data.options : []
+  const options = (Array.isArray(data?.options) ? data.options : [])
+    .map((o: any) => (typeof o === "string" ? o : String(o?.label || o?.id || "").trim()))
+    .filter((x: any) => typeof x === "string" && x.trim() !== "") as string[]
   const ai = data?.aiMetadata
 
   return (
