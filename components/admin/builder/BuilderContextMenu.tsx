@@ -7,10 +7,11 @@ type BuilderContextMenuProps = {
   y: number
   type: "pane" | "node"
   nodeId?: string
-  nodeKind?: "question" | "condition" | "action" | "result"
+  nodeKind?: "question" | "condition" | "decisionTree" | "action" | "result"
   onClose: () => void
   onAddQuestion: () => void
   onAddCondition: () => void
+  onAddDecisionTree: () => void
   onAddAction: () => void
   onAddResult: () => void
   onAddFlowNode: () => void
@@ -35,6 +36,9 @@ export function BuilderContextMenu(props: BuilderContextMenuProps) {
             </button>
             <button type="button" onClick={props.onAddCondition} className="w-full rounded-sm px-3 py-2 text-left hover:bg-muted">
               Nouvelle condition
+            </button>
+            <button type="button" onClick={props.onAddDecisionTree} className="w-full rounded-sm px-3 py-2 text-left hover:bg-muted">
+              Nouveau decision tree
             </button>
             <button type="button" onClick={props.onAddAction} className="w-full rounded-sm px-3 py-2 text-left hover:bg-muted">
               Nouvelle action

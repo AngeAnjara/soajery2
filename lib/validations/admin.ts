@@ -121,6 +121,14 @@ const flowSchemaObject = z.object({
       }),
       z.object({
         id: z.string().min(1),
+        type: z.literal("decisionTree"),
+        position: z.object({ x: z.number(), y: z.number() }),
+        data: z.object({
+          fieldKey: z.string().min(1),
+        }),
+      }),
+      z.object({
+        id: z.string().min(1),
         type: z.literal("action"),
         position: z.object({ x: z.number(), y: z.number() }),
         data: z

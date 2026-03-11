@@ -637,14 +637,21 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         <div className="text-sm text-destructive">
           {autoSubmitError}
           <div className="mt-2">
-            <Button type="submit" variant="outline" disabled={submitting}>
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={submitting || pendingMultiSelectChange || (Array.isArray(questions) && questions.length > 0)}
+            >
               Relancer l'analyse
             </Button>
           </div>
         </div>
       ) : null}
 
-      <Button type="submit" disabled={submitting}>
+      <Button
+        type="submit"
+        disabled={submitting || pendingMultiSelectChange || (Array.isArray(questions) && questions.length > 0)}
+      >
         {submitting ? "Analyse en cours..." : "Analyser"}
       </Button>
     </form>

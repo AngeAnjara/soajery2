@@ -23,6 +23,7 @@ import { BuilderContextMenu } from "@/components/admin/builder/BuilderContextMen
 import { ConditionNode } from "@/components/admin/builder/ConditionNode"
 import { ActionNode } from "@/components/admin/builder/ActionNode"
 import { QuestionNode } from "@/components/admin/builder/QuestionNode"
+import { DecisionTreeNode } from "@/components/admin/builder/DecisionTreeNode"
 import { ResultNode } from "@/components/admin/builder/ResultNode"
 import { AlertNode } from "@/components/admin/builder/AlertNode"
 import { FlowNode } from "@/components/admin/builder/FlowNode"
@@ -31,6 +32,7 @@ import { Button } from "@/components/ui/button"
 const nodeTypes = {
   questionNode: QuestionNode,
   conditionNode: ConditionNode,
+  decisionTreeNode: DecisionTreeNode,
   actionNode: ActionNode,
   resultNode: ResultNode,
   alertNode: AlertNode,
@@ -75,7 +77,7 @@ export function VerificationFlowBuilder() {
         y: number
         type: "pane" | "node"
         nodeId?: string
-        nodeKind?: "question" | "condition" | "action" | "result"
+        nodeKind?: "question" | "condition" | "decisionTree" | "action" | "result"
       }
     | null
   >(null)
@@ -124,13 +126,19 @@ export function VerificationFlowBuilder() {
               ? "questionNode"
               : n.type === "condition"
                 ? "conditionNode"
+                : n.type === "decisionTree"
+                  ? "decisionTreeNode"
                 : n.type === "action"
                   ? "actionNode"
                   : n.type === "flow"
                     ? "flowNode"
                     : n.type === "alert"
                       ? "alertNode"
-                      : "resultNode",
+                      : n.type === "result"
+                        ? "resultNode"
+                        : (() => {
+                            throw new Error(`Unknown node type '${String(n.type)}' in flow '${String(fid)}'`)
+                          })(),
           data:
             n.type === "condition"
               ? (() => {
@@ -307,9 +315,11 @@ export function VerificationFlowBuilder() {
       const targetKind = String(targetNode.type || "")
 
       const allowed =
-        (sourceKind === "questionNode" && (targetKind === "conditionNode" || targetKind === "questionNode")) ||
+        (sourceKind === "questionNode" && (targetKind === "conditionNode" || targetKind === "decisionTreeNode" || targetKind === "questionNode")) ||
+        (sourceKind === "decisionTreeNode" &&
+          (targetKind === "questionNode" || targetKind === "conditionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
         (sourceKind === "conditionNode" &&
-          (targetKind === "questionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
+          (targetKind === "questionNode" || targetKind === "decisionTreeNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
         (sourceKind === "actionNode" && (targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode"))
 
       if (!allowed) {
@@ -405,6 +415,19 @@ export function VerificationFlowBuilder() {
         }
       }
 
+      if (sourceKind === "decisionTreeNode") {
+        const fromHandle = String(connection.sourceHandle || "").trim()
+        if (fromHandle) {
+          branchKey = fromHandle
+        }
+
+        if (!branchKey) {
+          const choice = window.prompt("Option id (branchKey). Laissez vide pour default.", "")
+          const key = String(choice || "").trim()
+          branchKey = key || undefined
+        }
+      }
+
       if (sourceKind === "questionNode" || sourceKind === "actionNode") {
         const existing = rfEdges.filter((e) => String(e.source) === source)
         if (existing.length >= 1) {
@@ -413,7 +436,7 @@ export function VerificationFlowBuilder() {
         }
       }
 
-      if (sourceKind === "conditionNode") {
+      if (sourceKind === "conditionNode" || sourceKind === "decisionTreeNode") {
         const key = branchKey || "__default__"
         const exists = rfEdges.some((e) => String(e.source) === source && edgeBranchKey(e) === (key === "__default__" ? "" : key))
         if (exists) {
@@ -451,7 +474,18 @@ export function VerificationFlowBuilder() {
   const onNodeContextMenu = React.useCallback((event: React.MouseEvent, node: Node) => {
     event.preventDefault()
     const id = String(node.id || "")
-    const nodeKind = node.type === "questionNode" ? "question" : node.type === "conditionNode" ? "condition" : node.type === "actionNode" ? "action" : node.type === "resultNode" ? "result" : undefined
+    const nodeKind =
+      node.type === "questionNode"
+        ? "question"
+        : node.type === "conditionNode"
+          ? "condition"
+          : node.type === "decisionTreeNode"
+            ? "decisionTree"
+            : node.type === "actionNode"
+              ? "action"
+              : node.type === "resultNode"
+                ? "result"
+                : undefined
     setContextMenu({ type: "node", x: event.clientX, y: event.clientY, nodeId: id, nodeKind })
   }, [])
 
@@ -504,6 +538,25 @@ export function VerificationFlowBuilder() {
             disabled={!flowId}
           >
             + Question
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              if (!flowId) return
+              const id = createNodeId("n")
+              const node: Node = {
+                id,
+                type: "decisionTreeNode",
+                data: { fieldKey: `field_${rfNodes.length + 1}` },
+                position: { x: 560, y: 40 },
+              }
+              setRfNodes((prev) => [...prev, node])
+              setIsDirty(true)
+            }}
+            disabled={!flowId}
+          >
+            + DecisionTree
           </Button>
           <Button
             type="button"
@@ -718,6 +771,19 @@ export function VerificationFlowBuilder() {
                       }
                     }
 
+                    if (n.type === "decisionTreeNode") {
+                      const fieldKey = String((n as any)?.data?.fieldKey || "").trim()
+                      if (!fieldKey) {
+                        throw new Error("Decision tree invalide: fieldKey requis")
+                      }
+                      return {
+                        id: String(n.id),
+                        type: "decisionTree",
+                        position: n.position,
+                        data: { fieldKey },
+                      }
+                    }
+
                     return {
                       id: String(n.id),
                       type:
@@ -727,7 +793,11 @@ export function VerificationFlowBuilder() {
                             ? "action"
                             : n.type === "alertNode"
                               ? "alert"
-                              : "result",
+                              : n.type === "resultNode"
+                                ? "result"
+                                : (() => {
+                                    throw new Error(`Unknown node kind '${String(n.type)}' cannot be saved`)
+                                  })(),
                       position: n.position,
                       data: n.data,
                     }
@@ -1069,6 +1139,22 @@ export function VerificationFlowBuilder() {
                 setIsDirty(true)
                 setContextMenu(null)
               }}
+              onAddDecisionTree={() => {
+                if (!flowId) {
+                  setContextMenu(null)
+                  return
+                }
+                const id = createNodeId("n")
+                const node: Node = {
+                  id,
+                  type: "decisionTreeNode",
+                  data: { fieldKey: `field_${rfNodes.length + 1}` },
+                  position: { x: 560, y: 40 },
+                }
+                setRfNodes((prev) => [...prev, node])
+                setIsDirty(true)
+                setContextMenu(null)
+              }}
               onAddAction={() => {
                 if (!flowId) {
                   setContextMenu(null)
@@ -1245,6 +1331,7 @@ export function VerificationFlowBuilder() {
               >
                 <option value="questionNode">question</option>
                 <option value="conditionNode">condition</option>
+                <option value="decisionTreeNode">decision tree</option>
                 <option value="actionNode">action</option>
                 <option value="resultNode">result</option>
                 <option value="alertNode">alert</option>
@@ -1376,6 +1463,19 @@ export function VerificationFlowBuilder() {
                   />
                   Inclure dans prompt AI
                 </label>
+              </div>
+            ) : null}
+
+            {String(nodeForm.type || "") === "decisionTreeNode" ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">fieldKey</label>
+                  <input
+                    value={String(nodeForm.data?.fieldKey || "")}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), fieldKey: e.target.value } }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  />
+                </div>
               </div>
             ) : null}
 

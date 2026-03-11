@@ -21,6 +21,171 @@ function edgeBranchKey(e: any) {
   return String(raw || "").trim()
 }
 
+function listSelectedOptionIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v)).filter((v) => v.trim() !== "")
+  }
+  if (value && typeof value === "object") {
+    return Object.entries(value as any)
+      .filter(([, v]) => typeof v === "number" && v > 0)
+      .map(([k]) => String(k))
+      .filter((v) => v.trim() !== "")
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    return [value.trim()]
+  }
+  return []
+}
+
+function pickDefaultEdgeTarget(flow: FlowDefinition, sourceId: string) {
+  const edges = getOutgoingEdges(flow, sourceId)
+  const chosen = edges.find((e) => !edgeBranchKey(e))
+  return chosen?.target
+}
+
+function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
+  const activeQuestions: Extract<FlowNode, { type: "question" }>[] = []
+  const queue: string[] = [String(flow.startNodeId || "")]
+  const visited = new Set<string>()
+  let firstTerminal: FlowRunResult | null = null
+
+  while (queue.length) {
+    const currentNodeId = String(queue.shift() || "")
+    if (!currentNodeId) continue
+    if (visited.has(currentNodeId)) continue
+    visited.add(currentNodeId)
+
+    const node = getNode(flow, currentNodeId)
+    if (!node) continue
+
+    if (node.type === "question") {
+      const key = node.data.fieldKey
+      if (!isAnswerProvided(answers[key])) {
+        activeQuestions.push(node)
+        continue
+      }
+      const next = pickSingleOutgoingTarget(flow, node.id)
+      if (next) queue.push(next)
+      continue
+    }
+
+    if (node.type === "condition") {
+      if (!canEvaluateCondition(node, answers)) {
+        continue
+      }
+      const branchKey = evaluateConditionNode(node, answers)
+      const edges = getOutgoingEdges(flow, node.id)
+      const chosen = edges.find((e) => edgeBranchKey(e) === String(branchKey)) || edges.find((e) => !edgeBranchKey(e))
+      if (chosen?.target) queue.push(chosen.target)
+      continue
+    }
+
+    if (node.type === "decisionTree") {
+      const fieldKey = String((node as any)?.data?.fieldKey || "")
+      const selected = listSelectedOptionIds((answers as any)?.[fieldKey])
+      const edges = getOutgoingEdges(flow, node.id)
+
+      const targets: string[] = []
+      const seenTargets = new Set<string>()
+
+      for (const optId of selected) {
+        const match = edges.find((e) => edgeBranchKey(e) === String(optId))
+        const t = match?.target
+        if (t && !seenTargets.has(String(t))) {
+          targets.push(String(t))
+          seenTargets.add(String(t))
+        }
+      }
+
+      if (!targets.length) {
+        const def = pickDefaultEdgeTarget(flow, node.id)
+        if (def && !seenTargets.has(String(def))) {
+          targets.push(String(def))
+          seenTargets.add(String(def))
+        }
+      }
+
+      targets.forEach((t) => queue.push(t))
+      continue
+    }
+
+    if (node.type === "flow") {
+      const target = (node as any)?.data?.target
+      if (!firstTerminal && target?.flowId) {
+        firstTerminal = {
+          actionType: "transition",
+          transition: target,
+          transitionFromNodeId: node.id,
+          transitionKind: "flow_node",
+        }
+      }
+      continue
+    }
+
+    if (node.type === "action") {
+      if (!firstTerminal && node.data.actionType === "call_ai") {
+        const prompt = generatePrompt(answers, flow.nodes)
+        firstTerminal = { actionType: "call_ai", prompt }
+      }
+      if (!firstTerminal && node.data.actionType === "redirect") {
+        const redirect = (node as any)?.data?.payload?.redirect
+        firstTerminal = { actionType: "redirect", redirect }
+      }
+      if (node.data.actionType === "show_result") {
+        const next = pickSingleOutgoingTarget(flow, node.id)
+        if (!next) continue
+
+        const nextNode = getNode(flow, next)
+        if (!nextNode) continue
+
+        if (!firstTerminal && nextNode.type === "result") {
+          firstTerminal = {
+            resultNodeId: nextNode.id,
+            resultType: "result",
+            title: nextNode.data.title,
+            description: nextNode.data.description,
+          }
+        }
+
+        if (!firstTerminal && nextNode.type === "alert") {
+          const color = (nextNode as any).data?.color === "green" ? "green" : "red"
+          firstTerminal = {
+            resultNodeId: nextNode.id,
+            resultType: "alert",
+            resultColor: color,
+            title: "Avertissement",
+            description: (nextNode as any).data?.text || "",
+          }
+        }
+
+        if (nextNode.type !== "result" && nextNode.type !== "alert") {
+          queue.push(next)
+        }
+      }
+      continue
+    }
+
+    if (!firstTerminal && node.type === "result") {
+      firstTerminal = { resultNodeId: node.id, resultType: "result", title: node.data.title, description: node.data.description }
+      continue
+    }
+
+    if (!firstTerminal && node.type === "alert") {
+      const color = (node as any).data?.color === "green" ? "green" : "red"
+      firstTerminal = {
+        resultNodeId: node.id,
+        resultType: "alert",
+        resultColor: color,
+        title: "Avertissement",
+        description: (node as any).data?.text || "",
+      }
+      continue
+    }
+  }
+
+  return { activeQuestions, firstTerminal }
+}
+
 function pickSingleOutgoingTarget(flow: FlowDefinition, sourceId: string) {
   const edges = getOutgoingEdges(flow, sourceId)
   if (edges.length !== 1) return undefined
@@ -235,213 +400,20 @@ export async function runChainedFlows(opts: {
 }
 
 export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRunResult {
-  let currentNodeId = flow.startNodeId
-  const visited = new Set<string>()
-
-  while (currentNodeId) {
-    if (visited.has(currentNodeId)) {
-      return { nextNodeId: currentNodeId }
-    }
-    visited.add(currentNodeId)
-
-    const node = getNode(flow, currentNodeId)
-    if (!node) {
-      return { nextNodeId: currentNodeId }
-    }
-
-    const nodeId = node.id
-
-    if (node.type === "question") {
-      const next = pickSingleOutgoingTarget(flow, node.id)
-      if (!next) return { nextNodeId: node.id }
-      currentNodeId = next
-      continue
-    }
-
-    if (node.type === "condition") {
-      const branchKey = evaluateConditionNode(node, userAnswers)
-
-      const edges = getOutgoingEdges(flow, node.id)
-      const chosen =
-        edges.find((e) => edgeBranchKey(e) === String(branchKey)) ||
-        edges.find((e) => !edgeBranchKey(e))
-      if (!chosen?.target) return { nextNodeId: node.id }
-      currentNodeId = chosen.target
-      continue
-    }
-
-    if (node.type === "flow") {
-      const target = (node as any)?.data?.target
-      if (target?.flowId) {
-        return {
-          actionType: "transition",
-          transition: target,
-          transitionFromNodeId: nodeId,
-          transitionKind: "flow_node",
-        }
-      }
-      return { nextNodeId: nodeId }
-    }
-
-    if (node.type === "action") {
-      if (node.data.actionType === "call_ai") {
-        const prompt = generatePrompt(userAnswers, flow.nodes)
-        return { actionType: "call_ai", prompt }
-      }
-
-      if (node.data.actionType === "redirect") {
-        const redirect = (node as any)?.data?.payload?.redirect
-        return { actionType: "redirect", redirect }
-      }
-
-      if (node.data.actionType === "show_result") {
-        const next = pickSingleOutgoingTarget(flow, node.id)
-        if (!next) return { actionType: "show_result", nextNodeId: node.id }
-
-        const nextNode = getNode(flow, next)
-        if (nextNode?.type === "result") {
-          return {
-            resultNodeId: nextNode.id,
-            resultType: "result",
-            title: nextNode.data.title,
-            description: nextNode.data.description,
-          }
-        }
-
-        if (nextNode?.type === "alert") {
-          const color = (nextNode as any).data?.color === "green" ? "green" : "red"
-          return {
-            resultNodeId: nextNode.id,
-            resultType: "alert",
-            resultColor: color,
-            title: "Avertissement",
-            description: (nextNode as any).data?.text || "",
-          }
-        }
-
-        currentNodeId = next
-        continue
-      }
-
-      return { nextNodeId: nodeId }
-    }
-
-    if (node.type === "result") {
-      return { resultNodeId: nodeId, resultType: "result", title: node.data.title, description: node.data.description }
-    }
-
-    if (node.type === "alert") {
-      const color = (node as any).data?.color === "green" ? "green" : "red"
-      return {
-        resultNodeId: nodeId,
-        resultType: "alert",
-        resultColor: color,
-        title: "Avertissement",
-        description: (node as any).data?.text || "",
-      }
-    }
-
-    return { nextNodeId: nodeId }
+  const t = traverseActiveQuestions(flow, userAnswers)
+  if (t.activeQuestions.length) {
+    return { nextNodeId: t.activeQuestions[0]?.id }
   }
-
-  return {}
+  return t.firstTerminal || {}
 }
 
 export function preRunFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowPreRunResult {
-  let currentNodeId = flow.startNodeId
-  const visited = new Set<string>()
-
-  while (currentNodeId) {
-    if (visited.has(currentNodeId)) return { nextNodeId: currentNodeId }
-    visited.add(currentNodeId)
-
-    const node = getNode(flow, currentNodeId)
-    if (!node) return { nextNodeId: currentNodeId }
-
-    const nodeId = node.id
-
-    if (node.type === "question") {
-      const key = (node as any).data?.fieldKey
-      if (!isAnswerProvided((userAnswers as any)?.[key])) {
-        return { nextNodeId: nodeId, blockedOnQuestionId: nodeId }
-      }
-      const next = pickSingleOutgoingTarget(flow, nodeId)
-      if (!next) return { nextNodeId: nodeId }
-      currentNodeId = next
-      continue
-    }
-
-    if (node.type === "condition") {
-      if (!canEvaluateCondition(node as any, userAnswers)) {
-        return { nextNodeId: nodeId }
-      }
-      const branchKey = evaluateConditionNode(node as any, userAnswers)
-
-      const edges = getOutgoingEdges(flow, nodeId)
-      const chosen = edges.find((e) => edgeBranchKey(e) === String(branchKey)) || edges.find((e) => !edgeBranchKey(e))
-      if (!chosen?.target) return { nextNodeId: nodeId }
-      currentNodeId = chosen.target
-      continue
-    }
-
-    if (node.type === "flow") {
-      const target = (node as any)?.data?.target
-      if (target?.flowId) {
-        return {
-          actionType: "transition",
-          transition: target,
-          transitionFromNodeId: nodeId,
-          transitionKind: "flow_node",
-        }
-      }
-      return { nextNodeId: nodeId }
-    }
-
-    if (node.type === "action") {
-      if ((node as any).data?.actionType === "call_ai") {
-        const prompt = generatePrompt(userAnswers, flow.nodes)
-        return { actionType: "call_ai", prompt }
-      }
-
-      if ((node as any).data?.actionType === "redirect") {
-        const redirect = (node as any)?.data?.payload?.redirect
-        return { actionType: "redirect", redirect }
-      }
-
-      if ((node as any).data?.actionType === "show_result") {
-        const next = pickSingleOutgoingTarget(flow, nodeId)
-        if (!next) return { actionType: "show_result", nextNodeId: nodeId }
-        const nextNode = getNode(flow, next)
-        if (nextNode?.type === "result") {
-          return { resultNodeId: nextNode.id, resultType: "result", title: (nextNode as any).data?.title, description: (nextNode as any).data?.description }
-        }
-        if (nextNode?.type === "alert") {
-          const color = (nextNode as any).data?.color === "green" ? "green" : "red"
-          return { resultNodeId: nextNode.id, resultType: "alert", resultColor: color, title: "Avertissement", description: (nextNode as any).data?.text || "" }
-        }
-        currentNodeId = next
-        continue
-      }
-
-      const next = pickSingleOutgoingTarget(flow, nodeId)
-      if (!next) return { nextNodeId: nodeId }
-      currentNodeId = next
-      continue
-    }
-
-    if (node.type === "result") {
-      return { resultNodeId: nodeId, resultType: "result", title: (node as any).data?.title, description: (node as any).data?.description }
-    }
-
-    if (node.type === "alert") {
-      const color = (node as any).data?.color === "green" ? "green" : "red"
-      return { resultNodeId: nodeId, resultType: "alert", resultColor: color, title: "Avertissement", description: (node as any).data?.text || "" }
-    }
-
-    return { nextNodeId: nodeId }
+  const t = traverseActiveQuestions(flow, userAnswers)
+  if (t.activeQuestions.length) {
+    const id = t.activeQuestions[0]?.id
+    return { nextNodeId: id, blockedOnQuestionId: id }
   }
-
-  return {}
+  return (t.firstTerminal || {}) as any
 }
 
 export function getQuestionSequence(flow: FlowDefinition) {
@@ -524,50 +496,6 @@ function canEvaluateCondition(node: Extract<FlowNode, { type: "condition" }>, an
 }
 
 export function getVisibleQuestionSequence(flow: FlowDefinition, answers: UserAnswers) {
-  const ordered: Extract<FlowNode, { type: "question" }>[] = []
-  let currentNodeId = flow.startNodeId
-  const visited = new Set<string>()
-
-  while (currentNodeId) {
-    if (visited.has(currentNodeId)) break
-    visited.add(currentNodeId)
-
-    const node = getNode(flow, currentNodeId)
-    if (!node) break
-
-    if (node.type === "question") {
-      ordered.push(node)
-      const key = node.data.fieldKey
-      if (!isAnswerProvided(answers[key])) {
-        break
-      }
-      const next = pickSingleOutgoingTarget(flow, node.id)
-      if (!next) break
-      currentNodeId = next
-      continue
-    }
-
-    if (node.type === "condition") {
-      if (!canEvaluateCondition(node, answers)) {
-        break
-      }
-      const branchKey = evaluateConditionNode(node, answers)
-      const edges = getOutgoingEdges(flow, node.id)
-      const chosen =
-        edges.find((e) => edgeBranchKey(e) === String(branchKey)) ||
-        edges.find((e) => !edgeBranchKey(e))
-      const next = chosen?.target
-      if (!next) break
-      currentNodeId = next
-      continue
-    }
-
-    if (node.type === "alert") {
-      break
-    }
-
-    break
-  }
-
-  return ordered
+  const t = traverseActiveQuestions(flow, answers)
+  return t.activeQuestions
 }
