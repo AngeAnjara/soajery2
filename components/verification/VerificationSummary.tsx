@@ -71,10 +71,6 @@ export function VerificationSummary({ flow, result, onBack, onRequestPremium }: 
       </div>
 
       <div className="space-y-3 rounded-lg border bg-background p-4">
-        <div>
-          <div className="text-sm font-semibold">Résumé & analyse (IA)</div>
-          <div className="text-xs text-muted-foreground">Génère un résumé complet et une analyse via Together AI (Llama).</div>
-        </div>
 
         {aiError ? <div className="text-sm text-destructive">{aiError}</div> : null}
 
