@@ -5,7 +5,7 @@ import crypto from "crypto"
 import { ApiError } from "@/lib/apiError"
 import { env } from "@/lib/env"
 
-const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
+const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"])
 const MAX_SIZE_BYTES = 5 * 1024 * 1024
 
 function getExt(file: File) {
@@ -13,6 +13,7 @@ function getExt(file: File) {
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
+    "application/pdf": "pdf",
   }
 
   return byMime[file.type] || "bin"
@@ -37,4 +38,8 @@ export async function saveProofImage(file: File): Promise<string> {
   await writeFile(path.join(dir, filename), buffer)
 
   return `/uploads/${filename}`
+}
+
+export async function saveUploadedFile(file: File): Promise<string> {
+  return saveProofImage(file)
 }

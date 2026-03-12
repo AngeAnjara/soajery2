@@ -45,6 +45,7 @@ function pickDefaultEdgeTarget(flow: FlowDefinition, sourceId: string) {
 
 function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
   const activeQuestions: Extract<FlowNode, { type: "question" }>[] = []
+  const pendingUploadNodes: Extract<FlowNode, { type: "upload" }>[] = []
   const queue: string[] = [String(flow.startNodeId || "")]
   const visited = new Set<string>()
   let firstTerminal: FlowRunResult | null = null
@@ -66,6 +67,37 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
       }
       const next = pickSingleOutgoingTarget(flow, node.id)
       if (next) queue.push(next)
+      continue
+    }
+
+    if (node.type === "upload") {
+      const key = node.data.fieldKey
+      if (!isAnswerProvided(answers[key])) {
+        pendingUploadNodes.push(node)
+        continue
+      }
+      const next = pickSingleOutgoingTarget(flow, node.id)
+      if (next) queue.push(next)
+      continue
+    }
+
+    if (node.type === "openaiVision") {
+      const outputFieldKey = String((node as any)?.data?.outputFieldKey || "")
+      if (outputFieldKey && isAnswerProvided((answers as any)?.[outputFieldKey])) {
+        const next = pickSingleOutgoingTarget(flow, node.id)
+        if (next) queue.push(next)
+        continue
+      }
+
+      if (!firstTerminal) {
+        firstTerminal = {
+          actionType: "call_ai",
+          pendingVisionNodeId: node.id,
+          visionModel: String((node as any)?.data?.model || ""),
+          visionPrompt: String((node as any)?.data?.prompt || ""),
+          visionOutputFieldKey: outputFieldKey,
+        }
+      }
       continue
     }
 
@@ -183,7 +215,7 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
     }
   }
 
-  return { activeQuestions, firstTerminal }
+  return { activeQuestions, pendingUploadNodes, firstTerminal }
 }
 
 function pickSingleOutgoingTarget(flow: FlowDefinition, sourceId: string) {
@@ -311,6 +343,12 @@ export function evaluateConditionNode(node: Extract<FlowNode, { type: "condition
 
 export type FlowRunResult = {
   nextNodeId?: string
+  pendingUploadNodeId?: string
+  pendingVisionNodeId?: string
+  visionModel?: string
+  visionPrompt?: string
+  visionOutputFieldKey?: string
+  visionResult?: Record<string, unknown>
   actionType?: "call_ai" | "show_result" | "redirect" | "transition"
   prompt?: string
   redirect?: any
@@ -326,6 +364,7 @@ export type FlowRunResult = {
 
 export type FlowPreRunResult = FlowRunResult & {
   blockedOnQuestionId?: string
+  pendingUploadNodeId?: string
 }
 
 export type TransitionLineageHop = {
@@ -404,6 +443,10 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
   if (t.activeQuestions.length) {
     return { nextNodeId: t.activeQuestions[0]?.id }
   }
+  if (t.pendingUploadNodes.length) {
+    const id = t.pendingUploadNodes[0]?.id
+    return { nextNodeId: id, pendingUploadNodeId: id }
+  }
   return t.firstTerminal || {}
 }
 
@@ -412,6 +455,10 @@ export function preRunFlow(flow: FlowDefinition, userAnswers: UserAnswers): Flow
   if (t.activeQuestions.length) {
     const id = t.activeQuestions[0]?.id
     return { nextNodeId: id, blockedOnQuestionId: id }
+  }
+  if (t.pendingUploadNodes.length) {
+    const id = t.pendingUploadNodes[0]?.id
+    return { nextNodeId: id, pendingUploadNodeId: id }
   }
   return (t.firstTerminal || {}) as any
 }
@@ -445,6 +492,13 @@ export function getQuestionSequence(flow: FlowDefinition) {
     }
 
     if (node.type === "action") {
+      const next = pickSingleOutgoingTarget(flow, node.id)
+      if (!next) break
+      currentNodeId = next
+      continue
+    }
+
+    if (node.type === "upload") {
       const next = pickSingleOutgoingTarget(flow, node.id)
       if (!next) break
       currentNodeId = next

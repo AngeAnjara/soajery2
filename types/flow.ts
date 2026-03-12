@@ -69,6 +69,19 @@ export type AlertNodeData = {
   color?: "red" | "green"
 }
 
+export type UploadNodeData = {
+  label: string
+  fieldKey: string
+  accept?: string
+  maxSizeMb?: number
+}
+
+export type OpenAIVisionNodeData = {
+  model: "gpt-4o" | "gpt-4-turbo" | "gpt-4-vision-preview"
+  prompt: string
+  outputFieldKey: string
+}
+
 export type FlowJumpNodeData = {
   target: FlowTransitionTarget
 }
@@ -81,6 +94,8 @@ export type FlowNode =
   | { id: string; type: "flow"; position: { x: number; y: number }; data: FlowJumpNodeData }
   | { id: string; type: "result"; position: { x: number; y: number }; data: ResultNodeData }
   | { id: string; type: "alert"; position: { x: number; y: number }; data: AlertNodeData }
+  | { id: string; type: "upload"; position: { x: number; y: number }; data: UploadNodeData }
+  | { id: string; type: "openaiVision"; position: { x: number; y: number }; data: OpenAIVisionNodeData }
 
 export type FlowEdge = {
   id: string

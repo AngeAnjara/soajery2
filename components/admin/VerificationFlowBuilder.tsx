@@ -26,6 +26,8 @@ import { QuestionNode } from "@/components/admin/builder/QuestionNode"
 import { DecisionTreeNode } from "@/components/admin/builder/DecisionTreeNode"
 import { ResultNode } from "@/components/admin/builder/ResultNode"
 import { AlertNode } from "@/components/admin/builder/AlertNode"
+import { UploadNode } from "@/components/admin/builder/UploadNode"
+import { OpenAIVisionNode } from "@/components/admin/builder/OpenAIVisionNode"
 import { FlowNode } from "@/components/admin/builder/FlowNode"
 import { Button } from "@/components/ui/button"
 
@@ -36,6 +38,8 @@ const nodeTypes = {
   actionNode: ActionNode,
   resultNode: ResultNode,
   alertNode: AlertNode,
+  uploadNode: UploadNode,
+  openaiVisionNode: OpenAIVisionNode,
   flowNode: FlowNode,
 }
 
@@ -134,6 +138,10 @@ export function VerificationFlowBuilder() {
                     ? "flowNode"
                     : n.type === "alert"
                       ? "alertNode"
+                      : n.type === "openaiVision"
+                        ? "openaiVisionNode"
+                      : n.type === "upload"
+                        ? "uploadNode"
                       : n.type === "result"
                         ? "resultNode"
                         : (() => {
@@ -320,7 +328,14 @@ export function VerificationFlowBuilder() {
           (targetKind === "questionNode" || targetKind === "conditionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
         (sourceKind === "conditionNode" &&
           (targetKind === "questionNode" || targetKind === "decisionTreeNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
-        (sourceKind === "actionNode" && (targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode"))
+        (sourceKind === "actionNode" && (targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
+        (sourceKind === "uploadNode" && (targetKind === "conditionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode")) ||
+        (sourceKind === "uploadNode" && targetKind === "openaiVisionNode") ||
+        (sourceKind === "openaiVisionNode" &&
+          (targetKind === "conditionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
+        (sourceKind === "questionNode" && targetKind === "uploadNode") ||
+        (sourceKind === "conditionNode" && targetKind === "uploadNode") ||
+        (sourceKind === "decisionTreeNode" && targetKind === "uploadNode")
 
       if (!allowed) {
         toast.error("Connexion non autorisée")
@@ -428,7 +443,7 @@ export function VerificationFlowBuilder() {
         }
       }
 
-      if (sourceKind === "questionNode" || sourceKind === "actionNode") {
+      if (sourceKind === "questionNode" || sourceKind === "actionNode" || sourceKind === "uploadNode" || sourceKind === "openaiVisionNode") {
         const existing = rfEdges.filter((e) => String(e.source) === source)
         if (existing.length >= 1) {
           toast.error("Ce node doit avoir une seule sortie")
@@ -650,6 +665,48 @@ export function VerificationFlowBuilder() {
               const id = createNodeId("n")
               const node: Node = {
                 id,
+                type: "uploadNode",
+                data: { label: "Upload fichier", fieldKey: `upload_${rfNodes.length + 1}`, accept: "image/*", maxSizeMb: 5 },
+                position: { x: 980, y: 340 },
+              }
+              setRfNodes((prev) => [...prev, node])
+              setIsDirty(true)
+            }}
+            disabled={!flowId}
+          >
+            + Upload
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              if (!flowId) return
+              const id = createNodeId("n")
+              const node: Node = {
+                id,
+                type: "openaiVisionNode",
+                data: {
+                  model: "gpt-4o",
+                  prompt: "Analyse cette image et retourne un JSON structuré.",
+                  outputFieldKey: `vision_${rfNodes.length + 1}`,
+                },
+                position: { x: 980, y: 440 },
+              }
+              setRfNodes((prev) => [...prev, node])
+              setIsDirty(true)
+            }}
+            disabled={!flowId}
+          >
+            + Vision AI
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              if (!flowId) return
+              const id = createNodeId("n")
+              const node: Node = {
+                id,
                 type: "flowNode",
                 data: { target: { flowId: "", entry: { type: "start" } } },
                 position: { x: 980, y: 240 },
@@ -789,6 +846,10 @@ export function VerificationFlowBuilder() {
                       type:
                         n.type === "questionNode"
                           ? "question"
+                          : n.type === "uploadNode"
+                            ? "upload"
+                          : n.type === "openaiVisionNode"
+                            ? "openaiVision"
                           : n.type === "actionNode"
                             ? "action"
                             : n.type === "alertNode"
@@ -827,7 +888,7 @@ export function VerificationFlowBuilder() {
                 })
 
                 rfNodes.forEach((n) => {
-                  if (n.type !== "questionNode" && n.type !== "actionNode") return
+                  if (n.type !== "questionNode" && n.type !== "actionNode" && n.type !== "uploadNode" && n.type !== "openaiVisionNode") return
                   const count = outgoingCounts.get(String(n.id)) || 0
                   if (count > 1) {
                     throw new Error("Invalid graph: question/action must have only 1 outgoing edge")
@@ -1335,6 +1396,8 @@ export function VerificationFlowBuilder() {
                 <option value="actionNode">action</option>
                 <option value="resultNode">result</option>
                 <option value="alertNode">alert</option>
+                <option value="uploadNode">upload fichier</option>
+                <option value="openaiVisionNode">OpenAI Vision</option>
                 <option value="flowNode">flow jump</option>
               </select>
             </div>
@@ -1473,6 +1536,94 @@ export function VerificationFlowBuilder() {
                   <input
                     value={String(nodeForm.data?.fieldKey || "")}
                     onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), fieldKey: e.target.value } }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {String(nodeForm.type || "") === "openaiVisionNode" ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">model</label>
+                  <select
+                    value={String(nodeForm.data?.model || "gpt-4o")}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), model: e.target.value } }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="gpt-4-turbo">gpt-4-turbo</option>
+                    <option value="gpt-4-vision-preview">gpt-4-vision-preview</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">prompt</label>
+                  <textarea
+                    value={String(nodeForm.data?.prompt || "")}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), prompt: e.target.value } }))}
+                    className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">outputFieldKey</label>
+                  <input
+                    value={String(nodeForm.data?.outputFieldKey || "")}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), outputFieldKey: e.target.value } }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {String(nodeForm.type || "") === "uploadNode" ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Label</label>
+                  <input
+                    value={String(nodeForm.data?.label || "")}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), label: e.target.value } }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">fieldKey</label>
+                  <input
+                    value={String(nodeForm.data?.fieldKey || "")}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), fieldKey: e.target.value } }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">accept</label>
+                  <input
+                    value={String(nodeForm.data?.accept || "")}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), accept: e.target.value } }))}
+                    placeholder="image/*,application/pdf"
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">maxSizeMb</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={nodeForm.data?.maxSizeMb === undefined ? "" : Number(nodeForm.data?.maxSizeMb)}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      const n = raw === "" ? undefined : Number(raw)
+                      setNodeForm((p: any) => ({
+                        ...p,
+                        data: {
+                          ...(p.data || {}),
+                          maxSizeMb: typeof n === "number" && Number.isFinite(n) ? n : undefined,
+                        },
+                      }))
+                    }}
                     className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                   />
                 </div>
