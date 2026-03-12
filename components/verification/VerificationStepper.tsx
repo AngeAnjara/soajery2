@@ -75,6 +75,9 @@ export function VerificationStepper({ userId }: Props) {
             }
           }}
           onEvaluated={(res) => {
+            setEvaluation(res)
+            setStep(3)
+
             ;(async () => {
               const resolvedFlowId = String((res as any)?.resolvedFlowId || "").trim()
               if (resolvedFlowId && resolvedFlowId !== String(flow._id)) {
@@ -89,9 +92,6 @@ export function VerificationStepper({ userId }: Props) {
                   setFlow({ ...(flow as any), _id: resolvedFlowId } as any)
                 }
               }
-
-              setEvaluation(res)
-              setStep(3)
             })()
           }}
         />

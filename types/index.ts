@@ -101,6 +101,12 @@ export type FlowRunResultDTO = {
   redirect?: RedirectPayload
   transition?: FlowTransitionTarget
   aiAnalysis?: any
+  pendingUploadNodeId?: string
+  pendingVisionNodeId?: string
+  visionModel?: string
+  visionPrompt?: string
+  visionOutputFieldKey?: string
+  visionResult?: Record<string, unknown>
   resultType?: "result" | "alert"
   resultColor?: "red" | "green"
   resultTitle?: string

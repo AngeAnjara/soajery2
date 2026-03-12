@@ -217,6 +217,27 @@ const flowSchemaObject = z.object({
           color: z.enum(["red", "green"]).optional(),
         }),
       }),
+      z.object({
+        id: z.string().min(1),
+        type: z.literal("upload"),
+        position: z.object({ x: z.number(), y: z.number() }),
+        data: z.object({
+          label: z.string().min(1),
+          fieldKey: z.string().min(1),
+          accept: z.string().min(1),
+          maxSizeMb: z.number().min(0).optional(),
+        }),
+      }),
+      z.object({
+        id: z.string().min(1),
+        type: z.literal("openaiVision"),
+        position: z.object({ x: z.number(), y: z.number() }),
+        data: z.object({
+          model: z.string().min(1),
+          prompt: z.string().min(1),
+          outputFieldKey: z.string().min(1),
+        }),
+      }),
     ]),
   ),
   edges: z.array(
@@ -263,7 +284,7 @@ export const createFlowSchema = flowSchemaObject.superRefine((val, ctx) => {
 
   for (const [source, count] of outgoingBySource.entries()) {
     const t = nodeTypeById.get(source)
-    if (t === "question" || t === "action") {
+    if (t === "question" || t === "action" || t === "upload" || t === "openaiVision") {
       if (count > 1) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -306,7 +327,7 @@ export const patchFlowSchema = flowSchemaObject.partial().superRefine((val, ctx)
 
   for (const [source, count] of outgoingBySource.entries()) {
     const t = nodeTypeById.get(source)
-    if (t === "question" || t === "action") {
+    if (t === "question" || t === "action" || t === "upload" || t === "openaiVision") {
       if (count > 1) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

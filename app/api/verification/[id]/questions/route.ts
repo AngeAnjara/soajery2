@@ -96,9 +96,22 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const preview = preRunFlow(resolved.flowDef as any, {})
     const terminalAlert = preview.resultType === "alert"
 
+    const pendingUploadNodeId = typeof (preview as any)?.pendingUploadNodeId === "string" ? String((preview as any).pendingUploadNodeId) : ""
+    const uploadNode = pendingUploadNodeId
+      ? ((resolved.flowDef as any)?.nodes || []).find((n: any) => String(n?.id || "") === pendingUploadNodeId && String(n?.type || "") === "upload")
+      : null
+
     return NextResponse.json({
       resolvedFlowId: resolved.resolvedFlowId,
       questions,
+      pendingUploadNodeId: pendingUploadNodeId || undefined,
+      uploadNode: uploadNode || undefined,
+      nextNodeId: (preview as any)?.nextNodeId,
+      actionType: (preview as any)?.actionType,
+      pendingVisionNodeId: (preview as any)?.pendingVisionNodeId,
+      visionModel: (preview as any)?.visionModel,
+      visionPrompt: (preview as any)?.visionPrompt,
+      visionOutputFieldKey: (preview as any)?.visionOutputFieldKey,
       terminalAlert,
       resultType: preview.resultType,
       resultColor: preview.resultColor,
@@ -127,9 +140,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const preview = preRunFlow(resolved.flowDef as any, answers)
     const terminalAlert = preview.resultType === "alert"
 
+    const pendingUploadNodeId = typeof (preview as any)?.pendingUploadNodeId === "string" ? String((preview as any).pendingUploadNodeId) : ""
+    const uploadNode = pendingUploadNodeId
+      ? ((resolved.flowDef as any)?.nodes || []).find((n: any) => String(n?.id || "") === pendingUploadNodeId && String(n?.type || "") === "upload")
+      : null
+
     return NextResponse.json({
       resolvedFlowId: resolved.resolvedFlowId,
       questions,
+      pendingUploadNodeId: pendingUploadNodeId || undefined,
+      uploadNode: uploadNode || undefined,
+      nextNodeId: (preview as any)?.nextNodeId,
+      actionType: (preview as any)?.actionType,
+      pendingVisionNodeId: (preview as any)?.pendingVisionNodeId,
+      visionModel: (preview as any)?.visionModel,
+      visionPrompt: (preview as any)?.visionPrompt,
+      visionOutputFieldKey: (preview as any)?.visionOutputFieldKey,
       terminalAlert,
       resultType: preview.resultType,
       resultColor: preview.resultColor,

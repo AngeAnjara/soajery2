@@ -21,9 +21,14 @@ const links = [
 export function Navbar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { theme, setTheme } = useTheme()
+  const { theme, resolvedTheme, setTheme } = useTheme()
   const [open, setOpen] = React.useState(false)
   const [authed, setAuthed] = React.useState(false)
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   React.useEffect(() => {
     setOpen(false)
@@ -76,9 +81,9 @@ export function Navbar() {
             variant="ghost"
             size="icon"
             aria-label="Toggle theme"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            onClick={() => setTheme((resolvedTheme || theme) === "dark" ? "light" : "dark")}
           >
-            {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            {mounted ? ((resolvedTheme || theme) === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />) : null}
           </Button>
           <Button asChild variant="outline">
             <Link href="/mes-commandes" className="flex items-center gap-2">
@@ -115,9 +120,9 @@ export function Navbar() {
             variant="ghost"
             size="icon"
             aria-label="Toggle theme"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            onClick={() => setTheme((resolvedTheme || theme) === "dark" ? "light" : "dark")}
           >
-            {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            {mounted ? ((resolvedTheme || theme) === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />) : null}
           </Button>
           <Button
             variant="ghost"

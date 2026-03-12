@@ -72,3 +72,16 @@
     @apply bg-background text-foreground;
   }
 }
+
+.react-flow__handle {
+  position: relative;
+  width: 16px !important;
+  height: 16px !important;
+  border-width: 2px !important;
+}
+
+.react-flow__handle::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+}

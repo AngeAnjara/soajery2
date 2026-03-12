@@ -14,17 +14,24 @@ type Props = {
   onRedirect?: (targetFlowId: string) => void
 }
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+
 export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props) {
   const [questions, setQuestions] = React.useState<Extract<FlowNodeDTO, { type: "question" }>[]>([])
   const [historyQuestions, setHistoryQuestions] = React.useState<Extract<FlowNodeDTO, { type: "question" }>[]>([])
-  const [historyAnswers, setHistoryAnswers] = React.useState<Record<string, string | string[] | boolean | number | Record<string, number>>>({})
-  const [answers, setAnswers] = React.useState<Record<string, string | string[] | boolean | number | Record<string, number>>>({})
+  const [historyAnswers, setHistoryAnswers] = React.useState<Record<string, JsonValue>>({})
+  const [answers, setAnswers] = React.useState<Record<string, JsonValue>>({})
   const [confirmedAnswers, setConfirmedAnswers] = React.useState<
-    Record<string, string | string[] | boolean | number | Record<string, number>>
+    Record<string, JsonValue>
   >({})
   const [loading, setLoading] = React.useState(true)
   const [submitting, setSubmitting] = React.useState(false)
   const [terminalAlert, setTerminalAlert] = React.useState(false)
+  const [pendingUploadNodeId, setPendingUploadNodeId] = React.useState<string>("")
+  const [uploadNode, setUploadNode] = React.useState<any>(null)
+  const [uploadFile, setUploadFile] = React.useState<File | null>(null)
+  const [pendingActionType, setPendingActionType] = React.useState<string>("")
+  const [pendingVisionNodeId, setPendingVisionNodeId] = React.useState<string>("")
   const [preview, setPreview] = React.useState<Pick<
     FlowRunResultDTO,
     "resultType" | "resultColor" | "resultTitle" | "resultDescription"
@@ -34,6 +41,9 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
   const fetchControllerRef = React.useRef<AbortController | null>(null)
   const evalControllerRef = React.useRef<AbortController | null>(null)
   const autoSubmitKeyRef = React.useRef<string>("")
+  const autoNoQuestionSubmitKeyRef = React.useRef<string>("")
+  const visionAutoInFlightRef = React.useRef(false)
+  const noQuestionAutoInFlightRef = React.useRef(false)
   const prevFlowIdRef = React.useRef<string>(flowId)
   const didInitialLoadRef = React.useRef(false)
 
@@ -59,13 +69,111 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
   )
 
   React.useEffect(() => {
+    if (loading) return
+    if (pendingUploadNodeId) return
+    if (questions.length) return
+    if (!pendingVisionNodeId) return
+    if (visionAutoInFlightRef.current) return
+
+    setSubmitting(true)
+    visionAutoInFlightRef.current = true
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const res = await fetch("/api/verification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ flowId, answers: confirmedAnswers }),
+        })
+
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data?.error || "Erreur")
+        }
+
+        if (cancelled) return
+
+        const parsed = data as FlowRunResultDTO
+        const continued = await handleContinuation(parsed)
+        if (!continued) onEvaluated(parsed)
+      } catch (err: any) {
+        if (err?.name !== "AbortError") {
+          toast.error(err?.message || "Erreur")
+        }
+      } finally {
+        visionAutoInFlightRef.current = false
+        if (!cancelled) setSubmitting(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      visionAutoInFlightRef.current = false
+    }
+  }, [loading, pendingUploadNodeId, questions.length, pendingVisionNodeId, flowId, confirmedAnswers, handleContinuation, onEvaluated])
+
+  React.useEffect(() => {
+    if (loading) return
+    if (pendingUploadNodeId) return
+    if (questions.length) return
+    if (pendingVisionNodeId) return
+
+    if (noQuestionAutoInFlightRef.current) return
+
+    const shouldAutoSubmit = pendingActionType === "show_result" || pendingActionType === "call_ai"
+    if (!shouldAutoSubmit) return
+
+    const key = JSON.stringify({ flowId, answers: confirmedAnswers, actionType: pendingActionType })
+    if (autoNoQuestionSubmitKeyRef.current === key) return
+    autoNoQuestionSubmitKeyRef.current = key
+
+    setSubmitting(true)
+    noQuestionAutoInFlightRef.current = true
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const res = await fetch("/api/verification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ flowId, answers: confirmedAnswers }),
+        })
+
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data?.error || "Erreur")
+        }
+
+        if (cancelled) return
+
+        const parsed = data as FlowRunResultDTO
+        const continued = await handleContinuation(parsed)
+        if (!continued) onEvaluated(parsed)
+      } catch (err: any) {
+        if (err?.name !== "AbortError") {
+          toast.error(err?.message || "Erreur")
+        }
+      } finally {
+        noQuestionAutoInFlightRef.current = false
+        if (!cancelled) setSubmitting(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      noQuestionAutoInFlightRef.current = false
+    }
+  }, [loading, pendingUploadNodeId, questions.length, pendingVisionNodeId, pendingActionType, flowId, confirmedAnswers, handleContinuation, onEvaluated])
+
+  React.useEffect(() => {
     const hasActiveMultiSelect = questions.some((q) => String((q as any)?.data?.inputType || "") === "multi_select")
     if (hasActiveMultiSelect) return
     setConfirmedAnswers(answers)
   }, [answers, questions])
 
   const fetchQuestions = React.useCallback(
-    async (nextAnswers: Record<string, string | string[] | boolean | number | Record<string, number>>) => {
+    async (nextAnswers: Record<string, JsonValue>) => {
       fetchControllerRef.current?.abort()
       const controller = new AbortController()
       fetchControllerRef.current = controller
@@ -97,6 +205,10 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       return {
         redirected: false,
         questions: (data?.questions || []) as any[],
+        pendingUploadNodeId: typeof (data as any)?.pendingUploadNodeId === "string" ? String((data as any).pendingUploadNodeId) : "",
+        uploadNode: (data as any)?.uploadNode || null,
+        actionType: typeof (data as any)?.actionType === "string" ? String((data as any).actionType) : "",
+        pendingVisionNodeId: typeof (data as any)?.pendingVisionNodeId === "string" ? String((data as any).pendingVisionNodeId) : "",
         terminalAlert: !!data?.terminalAlert,
         preview: {
           resultType: data?.resultType,
@@ -135,6 +247,10 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
           const r = await fetchQuestions({})
           if (!r.redirected) {
             setQuestions(r.questions as any)
+            setPendingUploadNodeId(String((r as any)?.pendingUploadNodeId || ""))
+            setUploadNode((r as any)?.uploadNode || null)
+            setPendingActionType(String((r as any)?.actionType || ""))
+            setPendingVisionNodeId(String((r as any)?.pendingVisionNodeId || ""))
             setTerminalAlert(!!r.terminalAlert)
             setPreview(r.preview || null)
           }
@@ -174,6 +290,10 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
           if (!cancelled) {
             if (!r.redirected) {
               setQuestions(r.questions as any)
+              setPendingUploadNodeId(String((r as any)?.pendingUploadNodeId || ""))
+              setUploadNode((r as any)?.uploadNode || null)
+              setPendingActionType(String((r as any)?.actionType || ""))
+              setPendingVisionNodeId(String((r as any)?.pendingVisionNodeId || ""))
               setTerminalAlert(!!r.terminalAlert)
               setPreview(r.preview || null)
             }
@@ -192,8 +312,63 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
     }
   }, [answers, confirmedAnswers, fetchQuestions, loading])
 
-  const updateAnswer = (fieldKey: string, value: string | string[] | boolean | number | Record<string, number>) => {
+  const updateAnswer = (fieldKey: string, value: JsonValue) => {
     setAnswers((prev) => ({ ...prev, [fieldKey]: value }))
+  }
+
+  const submitUpload = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    const fieldKey = String(uploadNode?.data?.fieldKey || "")
+    if (!fieldKey) {
+      toast.error("Upload node invalide")
+      return
+    }
+
+    if (!uploadFile) {
+      toast.error("Fichier requis")
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const form = new FormData()
+      form.set("file", uploadFile)
+
+      const res = await fetch("/api/verification/upload", {
+        method: "POST",
+        body: form,
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || "Erreur")
+      }
+
+      const fileUrl = String(data?.fileUrl || "")
+      if (!fileUrl) {
+        throw new Error("Upload échoué")
+      }
+
+      const nextAnswers = { ...confirmedAnswers, [fieldKey]: fileUrl }
+      setUploadFile(null)
+      setAnswers(nextAnswers)
+      setConfirmedAnswers(nextAnswers)
+
+      const r = await fetchQuestions(nextAnswers)
+      if (!r.redirected) {
+        setQuestions(r.questions as any)
+        setPendingUploadNodeId(String((r as any)?.pendingUploadNodeId || ""))
+        setUploadNode((r as any)?.uploadNode || null)
+        setPendingActionType(String((r as any)?.actionType || ""))
+        setPendingVisionNodeId(String((r as any)?.pendingVisionNodeId || ""))
+        setTerminalAlert(!!r.terminalAlert)
+        setPreview(r.preview || null)
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Erreur")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   React.useEffect(() => {
@@ -279,7 +454,47 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
     return <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">Chargement...</div>
   }
 
+  if (pendingUploadNodeId && uploadNode) {
+    const label = String(uploadNode?.data?.label || "Upload fichier")
+    const accept = typeof uploadNode?.data?.accept === "string" ? uploadNode.data.accept : ""
+
+    return (
+      <form onSubmit={submitUpload} className="space-y-4 rounded-xl border bg-card p-6">
+        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          <div className="text-lg font-semibold">{label}</div>
+          <Button type="button" variant="outline" size="sm" onClick={onBack}>
+            Retour
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Fichier</label>
+          <input
+            type="file"
+            accept={accept || undefined}
+            onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+            className="block w-full text-sm"
+          />
+        </div>
+
+        <Button type="submit" disabled={submitting}>
+          {submitting ? "Envoi..." : "Envoyer"}
+        </Button>
+      </form>
+    )
+  }
+
   if (!questions.length) {
+    if (submitting || pendingVisionNodeId || pendingActionType === "show_result" || pendingActionType === "call_ai") {
+      return (
+        <div className="space-y-4 rounded-xl border bg-card p-6">
+          <div className="text-sm text-muted-foreground">Analyse en cours...</div>
+          <Button type="button" variant="outline" onClick={onBack} disabled={submitting}>
+            Retour
+          </Button>
+        </div>
+      )
+    }
     return (
       <div className="space-y-4 rounded-xl border bg-card p-6">
         <div className="text-sm text-muted-foreground">Aucune question configurée pour ce flux.</div>

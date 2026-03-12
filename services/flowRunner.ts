@@ -522,7 +522,10 @@ function isAnswerProvided(value: unknown) {
   if (typeof value === "boolean") return true
   if (Array.isArray(value)) return value.length > 0
   if (typeof value === "object") {
-    return Object.values(value as any).some((v) => typeof v === "number" && v > 0)
+    const values = Object.values(value as any)
+    if (!values.length) return false
+    if (values.some((v) => typeof v === "number" && v > 0)) return true
+    return true
   }
   return false
 }

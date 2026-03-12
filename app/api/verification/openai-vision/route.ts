@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 
+import { readFile } from "fs/promises"
+import path from "path"
+
 import { ApiError, handleApiError } from "@/lib/apiError"
+import { env } from "@/lib/env"
 
 const bodySchema = z.object({
   fileUrl: z.string().min(1),
@@ -19,6 +23,51 @@ export async function POST(req: NextRequest) {
     const json = await req.json().catch(() => ({}))
     const body = bodySchema.parse(json)
 
+    const buildImageUrl = async (fileUrl: string) => {
+      const raw = String(fileUrl || "").trim()
+      if (!raw) throw new ApiError(400, "fileUrl is required")
+
+      if (raw.startsWith("http://") || raw.startsWith("https://") || raw.startsWith("data:")) {
+        return raw
+      }
+
+      if (raw.startsWith("/uploads/")) {
+        const filename = path.basename(raw)
+        const ext = path.extname(filename).toLowerCase()
+
+        const mime =
+          ext === ".jpg" || ext === ".jpeg"
+            ? "image/jpeg"
+            : ext === ".png"
+              ? "image/png"
+              : ext === ".webp"
+                ? "image/webp"
+                : ext === ".pdf"
+                  ? "application/pdf"
+                  : ""
+
+        if (!mime) {
+          throw new ApiError(400, "Unsupported uploaded file extension")
+        }
+        if (mime === "application/pdf") {
+          throw new ApiError(400, "PDF is not supported for Vision image analysis")
+        }
+
+        const dir = env.UPLOAD_DIR
+        const absDir = path.isAbsolute(dir) ? dir : path.join(process.cwd(), dir)
+        const absPath = path.join(absDir, filename)
+
+        const buffer = await readFile(absPath)
+        const b64 = buffer.toString("base64")
+        return `data:${mime};base64,${b64}`
+      }
+
+      const origin = new URL(req.url).origin
+      return new URL(raw, origin).toString()
+    }
+
+    const imageUrl = await buildImageUrl(body.fileUrl)
+
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -33,7 +82,7 @@ export async function POST(req: NextRequest) {
             content: [
               {
                 type: "image_url",
-                image_url: { url: body.fileUrl },
+                image_url: { url: imageUrl },
               },
               {
                 type: "text",
