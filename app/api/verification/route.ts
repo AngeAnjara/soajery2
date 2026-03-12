@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const findUploadFileUrlForVision = (flowDef: any, visionNodeId: string, answers: any) => {
+    const findUploadFileUrlsForVision = (flowDef: any, visionNodeId: string, answers: any) => {
       const edges = Array.isArray(flowDef?.edges) ? flowDef.edges : []
       const nodes = Array.isArray(flowDef?.nodes) ? flowDef.nodes : []
       const incoming = edges.filter((e: any) => String(e?.target || "") === String(visionNodeId))
@@ -78,14 +78,39 @@ export async function POST(req: NextRequest) {
         if (src?.type === "upload") {
           const fieldKey = String(src?.data?.fieldKey || "")
           const v = answers?.[fieldKey]
-          if (typeof v === "string" && v.trim() !== "") return v.trim()
+          if (typeof v === "string" && v.trim() !== "") return [v.trim()]
+          if (Array.isArray(v)) {
+            const urls = v
+              .map((x: any) => (typeof x === "string" ? x.trim() : ""))
+              .filter((x: string) => x && (x.startsWith("/uploads/") || x.startsWith("http://") || x.startsWith("https://")))
+            if (urls.length) return urls
+          }
         }
       }
 
-      const candidate = Object.values(answers || {}).find(
-        (v: any) => typeof v === "string" && v.trim() !== "" && (v.startsWith("/uploads/") || v.startsWith("http://") || v.startsWith("https://")),
-      )
-      return typeof candidate === "string" ? candidate.trim() : ""
+      const candidate = Object.values(answers || {}).find((v: any) => {
+        if (typeof v === "string") {
+          const s = v.trim()
+          return s !== "" && (s.startsWith("/uploads/") || s.startsWith("http://") || s.startsWith("https://"))
+        }
+        if (Array.isArray(v)) {
+          return v.some((x: any) => {
+            if (typeof x !== "string") return false
+            const s = x.trim()
+            return s !== "" && (s.startsWith("/uploads/") || s.startsWith("http://") || s.startsWith("https://"))
+          })
+        }
+        return false
+      })
+
+      if (typeof candidate === "string") return [candidate.trim()]
+      if (Array.isArray(candidate)) {
+        const urls = candidate
+          .map((x: any) => (typeof x === "string" ? x.trim() : ""))
+          .filter((x: string) => x && (x.startsWith("/uploads/") || x.startsWith("http://") || x.startsWith("https://")))
+        return urls
+      }
+      return []
     }
 
     let answers = { ...(clean.answers as any) }
@@ -115,19 +140,31 @@ export async function POST(req: NextRequest) {
         const visionNode = nodes.find((n: any) => String(n?.id || "") === visionNodeId)
         const model = String(visionNode?.data?.model || chained.run.visionModel || "")
         const prompt = String(visionNode?.data?.prompt || chained.run.visionPrompt || "")
-        const fileUrl = findUploadFileUrlForVision(visionFlow, visionNodeId, answers)
-
-        const vres = await fetch(`${origin}/api/verification/openai-vision`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileUrl, model, prompt }),
-        })
-        const vjson = await vres.json().catch(() => ({}))
-        if (!vres.ok) {
-          return NextResponse.json({ error: vjson?.error || "Vision API error" }, { status: vres.status || 500 })
+        const fileUrls = findUploadFileUrlsForVision(visionFlow, visionNodeId, answers)
+        if (!fileUrls.length) {
+          return NextResponse.json({ error: "Missing fileUrl for vision" }, { status: 422 })
         }
 
-        const visionResult = (vjson as any)?.result
+        const results: any[] = []
+        for (const u of fileUrls) {
+          const vres = await fetch(`${origin}/api/verification/openai-vision`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fileUrl: u, model, prompt }),
+          })
+          const vjson = await vres.json().catch(() => ({}))
+          if (!vres.ok) {
+            return NextResponse.json({ error: vjson?.error || "Vision API error" }, { status: vres.status || 500 })
+          }
+          results.push({ fileUrl: u, result: (vjson as any)?.result })
+        }
+
+        const visionResult = {
+          mode: "per_image",
+          count: results.length,
+          items: results,
+        }
+
         answers = { ...answers, [outputFieldKey]: visionResult }
         chained = await startChainedRun(answers)
         chained = { ...chained, run: { ...(chained.run as any), visionResult } }

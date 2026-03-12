@@ -50,6 +50,26 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
   const visited = new Set<string>()
   let firstTerminal: FlowRunResult | null = null
 
+  const isUploadSatisfied = (node: Extract<FlowNode, { type: "upload" }>) => {
+    const key = node.data.fieldKey
+    const maxFilesRaw = (node.data as any)?.maxFiles
+    const maxFiles = typeof maxFilesRaw === "number" && Number.isFinite(maxFilesRaw) && maxFilesRaw > 0 ? Math.floor(maxFilesRaw) : 1
+
+    const v: any = (answers as any)?.[key]
+    if (maxFiles <= 1) return isAnswerProvided(v)
+
+    if (Array.isArray(v)) {
+      const urls = v.map((x) => (typeof x === "string" ? x.trim() : "")).filter((x) => x)
+      return urls.length >= maxFiles
+    }
+
+    if (typeof v === "string") {
+      return v.trim() !== "" && maxFiles <= 1
+    }
+
+    return false
+  }
+
   while (queue.length) {
     const currentNodeId = String(queue.shift() || "")
     if (!currentNodeId) continue
@@ -71,8 +91,7 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
     }
 
     if (node.type === "upload") {
-      const key = node.data.fieldKey
-      if (!isAnswerProvided(answers[key])) {
+      if (!isUploadSatisfied(node)) {
         pendingUploadNodes.push(node)
         continue
       }

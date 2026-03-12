@@ -29,7 +29,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
   const [terminalAlert, setTerminalAlert] = React.useState(false)
   const [pendingUploadNodeId, setPendingUploadNodeId] = React.useState<string>("")
   const [uploadNode, setUploadNode] = React.useState<any>(null)
-  const [uploadFile, setUploadFile] = React.useState<File | null>(null)
+  const [uploadFiles, setUploadFiles] = React.useState<(File | null)[]>([])
   const [pendingActionType, setPendingActionType] = React.useState<string>("")
   const [pendingVisionNodeId, setPendingVisionNodeId] = React.useState<string>("")
   const [preview, setPreview] = React.useState<Pick<
@@ -40,6 +40,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
 
   const fetchControllerRef = React.useRef<AbortController | null>(null)
   const evalControllerRef = React.useRef<AbortController | null>(null)
+  const fetchSeqRef = React.useRef(0)
   const autoSubmitKeyRef = React.useRef<string>("")
   const autoNoQuestionSubmitKeyRef = React.useRef<string>("")
   const visionAutoInFlightRef = React.useRef(false)
@@ -174,7 +175,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
 
   const fetchQuestions = React.useCallback(
     async (nextAnswers: Record<string, JsonValue>) => {
-      fetchControllerRef.current?.abort()
+      const seq = ++fetchSeqRef.current
       const controller = new AbortController()
       fetchControllerRef.current = controller
 
@@ -185,6 +186,18 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         signal: controller.signal,
       })
       const data = await res.json()
+      if (seq !== fetchSeqRef.current) {
+        return {
+          redirected: false,
+          questions: [] as any[],
+          pendingUploadNodeId: "",
+          uploadNode: null,
+          actionType: "",
+          pendingVisionNodeId: "",
+          terminalAlert: false,
+          preview: null,
+        }
+      }
       if (!res.ok) {
         throw new Error(data?.error || "Erreur")
       }
@@ -325,32 +338,52 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       return
     }
 
-    if (!uploadFile) {
-      toast.error("Fichier requis")
+    const maxFilesRaw = uploadNode?.data?.maxFiles
+    const maxFiles =
+      typeof maxFilesRaw === "number" && Number.isFinite(maxFilesRaw) && maxFilesRaw > 0
+        ? Math.floor(maxFilesRaw)
+        : 1
+
+    const selected = uploadFiles.filter((f): f is File => !!f)
+
+    if (!selected.length) {
+      toast.error(maxFiles > 1 ? "Fichiers requis" : "Fichier requis")
+      return
+    }
+
+    if (maxFiles > 1 && selected.length < maxFiles) {
+      toast.error(`Veuillez sélectionner ${maxFiles} fichiers`)
       return
     }
 
     setSubmitting(true)
     try {
-      const form = new FormData()
-      form.set("file", uploadFile)
+      const urls: string[] = []
 
-      const res = await fetch("/api/verification/upload", {
-        method: "POST",
-        body: form,
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data?.error || "Erreur")
+      for (const f of selected.slice(0, maxFiles)) {
+        const form = new FormData()
+        form.set("file", f)
+
+        const res = await fetch("/api/verification/upload", {
+          method: "POST",
+          body: form,
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data?.error || "Erreur")
+        }
+
+        const fileUrl = String(data?.fileUrl || "")
+        if (!fileUrl) {
+          throw new Error("Upload échoué")
+        }
+        urls.push(fileUrl)
       }
 
-      const fileUrl = String(data?.fileUrl || "")
-      if (!fileUrl) {
-        throw new Error("Upload échoué")
-      }
+      const value: JsonValue = maxFiles > 1 ? urls : (urls[0] || "")
 
-      const nextAnswers = { ...confirmedAnswers, [fieldKey]: fileUrl }
-      setUploadFile(null)
+      const nextAnswers = { ...confirmedAnswers, [fieldKey]: value }
+      setUploadFiles([])
       setAnswers(nextAnswers)
       setConfirmedAnswers(nextAnswers)
 
@@ -457,6 +490,11 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
   if (pendingUploadNodeId && uploadNode) {
     const label = String(uploadNode?.data?.label || "Upload fichier")
     const accept = typeof uploadNode?.data?.accept === "string" ? uploadNode.data.accept : ""
+    const maxFilesRaw = uploadNode?.data?.maxFiles
+    const maxFiles =
+      typeof maxFilesRaw === "number" && Number.isFinite(maxFilesRaw) && maxFilesRaw > 0
+        ? Math.floor(maxFilesRaw)
+        : 1
 
     return (
       <form onSubmit={submitUpload} className="space-y-4 rounded-xl border bg-card p-6">
@@ -468,13 +506,77 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">Fichier</label>
-          <input
-            type="file"
-            accept={accept || undefined}
-            onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-            className="block w-full text-sm"
-          />
+          <label className="text-sm font-medium">{maxFiles > 1 ? `Fichiers (${maxFiles})` : "Fichier"}</label>
+          {maxFiles > 1 ? (
+            <div className="space-y-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                {Array.from({ length: maxFiles }).map((_, idx) => {
+                  const f = uploadFiles[idx] || null
+                  const filled = !!f
+                  return (
+                    <div key={idx} className="space-y-1">
+                      <div className={filled ? "text-xs text-muted-foreground" : "text-xs text-red-500"}>
+                        Fichier {idx + 1}
+                      </div>
+                      <input
+                        type="file"
+                        accept={accept || undefined}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null
+                          setUploadFiles((prev) => {
+                            const next = [...(Array.isArray(prev) ? prev : [])]
+                            while (next.length < maxFiles) next.push(null)
+                            next[idx] = file
+                            return next
+                          })
+                          e.currentTarget.value = ""
+                        }}
+                        className={
+                          filled
+                            ? "block w-full text-sm"
+                            : "block w-full rounded-md border border-red-500 text-sm"
+                        }
+                      />
+                      {f ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 truncate text-xs text-muted-foreground">{f.name}</div>
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              setUploadFiles((prev) => {
+                                const next = [...(Array.isArray(prev) ? prev : [])]
+                                while (next.length < maxFiles) next.push(null)
+                                next[idx] = null
+                                return next
+                              })
+                            }}
+                          >
+                            Retirer
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="text-xs text-muted-foreground">
+                {uploadFiles.filter((f) => !!f).length} / {maxFiles} sélectionné(s)
+              </div>
+            </div>
+          ) : (
+            <input
+              type="file"
+              accept={accept || undefined}
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null
+                setUploadFiles(file ? [file] : [])
+                e.currentTarget.value = ""
+              }}
+              className="block w-full text-sm"
+            />
+          )}
         </div>
 
         <Button type="submit" disabled={submitting}>

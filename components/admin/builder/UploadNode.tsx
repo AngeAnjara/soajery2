@@ -8,6 +8,7 @@ type UploadNodeData = {
   fieldKey: string
   accept?: string
   maxSizeMb?: number
+  maxFiles?: number
 }
 
 export function UploadNode({ data }: NodeProps<UploadNodeData>) {
@@ -15,6 +16,7 @@ export function UploadNode({ data }: NodeProps<UploadNodeData>) {
   const fieldKey = String(data?.fieldKey || "")
   const accept = typeof data?.accept === "string" ? data.accept : ""
   const maxSizeMb = typeof data?.maxSizeMb === "number" && Number.isFinite(data.maxSizeMb) ? data.maxSizeMb : undefined
+  const maxFiles = typeof data?.maxFiles === "number" && Number.isFinite(data.maxFiles) && data.maxFiles > 0 ? Math.floor(data.maxFiles) : undefined
 
   return (
     <div className="relative overflow-hidden rounded-xl border bg-card p-3 shadow-sm">
@@ -37,6 +39,7 @@ export function UploadNode({ data }: NodeProps<UploadNodeData>) {
         </div>
 
         <div className="text-xs text-muted-foreground">{typeof maxSizeMb === "number" ? `Max: ${maxSizeMb} Mo` : "Aucune limite"}</div>
+        <div className="text-xs text-muted-foreground">{typeof maxFiles === "number" ? `Fichiers: ${maxFiles}` : "Fichiers: 1"}</div>
       </div>
     </div>
   )

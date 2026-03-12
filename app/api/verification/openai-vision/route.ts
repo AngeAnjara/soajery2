@@ -8,7 +8,7 @@ import { ApiError, handleApiError } from "@/lib/apiError"
 import { env } from "@/lib/env"
 
 const bodySchema = z.object({
-  fileUrl: z.string().min(1),
+  fileUrl: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
   model: z.enum(["gpt-4o", "gpt-4-turbo", "gpt-4-vision-preview"]),
   prompt: z.string().min(1),
 })
@@ -26,6 +26,10 @@ export async function POST(req: NextRequest) {
     const buildImageUrl = async (fileUrl: string) => {
       const raw = String(fileUrl || "").trim()
       if (!raw) throw new ApiError(400, "fileUrl is required")
+
+      if (raw.endsWith(".zip") || raw.includes(".zip?")) {
+        throw new ApiError(400, "ZIP is not supported for Vision image analysis")
+      }
 
       if (raw.startsWith("http://") || raw.startsWith("https://") || raw.startsWith("data:")) {
         return raw
@@ -62,11 +66,23 @@ export async function POST(req: NextRequest) {
         return `data:${mime};base64,${b64}`
       }
 
-      const origin = new URL(req.url).origin
-      return new URL(raw, origin).toString()
+      throw new ApiError(400, "Invalid fileUrl")
     }
 
-    const imageUrl = await buildImageUrl(body.fileUrl)
+    const rawUrls = Array.isArray(body.fileUrl) ? body.fileUrl : [body.fileUrl]
+    const cleaned = rawUrls
+      .map((u) => String(u || "").trim())
+      .filter((u) => u)
+
+    if (!cleaned.length) {
+      throw new ApiError(400, "fileUrl is required")
+    }
+
+    const imageUrls = await Promise.all(cleaned.map((u) => buildImageUrl(u)))
+    const contentParts = [
+      ...imageUrls.map((url) => ({ type: "image_url", image_url: { url } })),
+      { type: "text", text: body.prompt },
+    ]
 
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -79,16 +95,7 @@ export async function POST(req: NextRequest) {
         messages: [
           {
             role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: { url: imageUrl },
-              },
-              {
-                type: "text",
-                text: body.prompt,
-              },
-            ],
+            content: contentParts,
           },
         ],
         response_format: { type: "json_object" },

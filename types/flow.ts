@@ -74,6 +74,7 @@ export type UploadNodeData = {
   fieldKey: string
   accept?: string
   maxSizeMb?: number
+  maxFiles?: number
 }
 
 export type OpenAIVisionNodeData = {

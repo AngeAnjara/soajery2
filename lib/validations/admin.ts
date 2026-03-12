@@ -226,6 +226,7 @@ const flowSchemaObject = z.object({
           fieldKey: z.string().min(1),
           accept: z.string().min(1),
           maxSizeMb: z.number().min(0).optional(),
+          maxFiles: z.number().int().min(1).optional(),
         }),
       }),
       z.object({

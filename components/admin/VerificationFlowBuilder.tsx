@@ -1627,6 +1627,31 @@ export function VerificationFlowBuilder() {
                     className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                   />
                 </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">maxFiles</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={nodeForm.data?.maxFiles === undefined ? "" : Number(nodeForm.data?.maxFiles)}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      const n = raw === "" ? undefined : Number(raw)
+                      setNodeForm((p: any) => ({
+                        ...p,
+                        data: {
+                          ...(p.data || {}),
+                          maxFiles:
+                            typeof n === "number" && Number.isFinite(n) && n > 0
+                              ? Math.floor(n)
+                              : undefined,
+                        },
+                      }))
+                    }}
+                    placeholder="1"
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  />
+                </div>
               </div>
             ) : null}
 
