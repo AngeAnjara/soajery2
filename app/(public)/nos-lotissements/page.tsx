@@ -13,6 +13,8 @@ export const metadata: Metadata = {
   description: "Découvrez nos lotissements.",
 }
 
+export const dynamic = 'force-dynamic'
+
 export default async function NosLotissementsPage() {
   await connectDB()
 

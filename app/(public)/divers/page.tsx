@@ -13,8 +13,10 @@ import { VideoCard } from "@/components/sections/VideoCard"
 
 export const metadata: Metadata = {
   title: "Divers | Soajery",
-  description: "Ressources, actualités, vidéos et FAQ.",
+  description: "Ressources, FAQ, définitions, actualités et vidéos.",
 }
+
+export const dynamic = 'force-dynamic'
 
 export default async function DiversPage() {
   let definitions: DefinitionDTO[] = []
