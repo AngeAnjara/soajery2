@@ -113,7 +113,7 @@ export type FlowDefinition = {
   startNodeId: string
 }
 
-export type UserAnswers = Record<string, string | string[] | boolean | number | Record<string, number>>
+export type UserAnswers = Record<string, any>
 
 export type FlowRunResultDTO = {
   resultId: string

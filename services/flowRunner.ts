@@ -8,6 +8,15 @@ import type {
 
 import { generatePrompt } from "@/services/aiService"
 
+type TraverseScope = {
+  key: string
+}
+
+type QueueItem = {
+  nodeId: string
+  scope?: TraverseScope
+}
+
 function getNode(flow: FlowDefinition, nodeId: string) {
   return flow.nodes.find((n) => n.id === nodeId)
 }
@@ -37,6 +46,76 @@ function listSelectedOptionIds(value: unknown): string[] {
   return []
 }
 
+function scopedFieldKey(base: string, scope?: TraverseScope) {
+  if (!scope?.key) return base
+  return `${base}__${scope.key}`
+}
+
+function isQuantityEnabledForFieldKey(flow: FlowDefinition, fieldKey: string) {
+  const key = String(fieldKey || "").trim()
+  if (!key) return false
+  return flow.nodes.some((n) => n.type === "question" && n.data.fieldKey === key && !!(n.data as any)?.allowQuantity)
+}
+
+function canEvaluateConditionScoped(node: Extract<FlowNode, { type: "condition" }>, answers: UserAnswers, scope?: TraverseScope) {
+  const data: any = node.data || {}
+  const branches = Array.isArray(data?.branches) ? data.branches : []
+
+  const isRuleReady = (r: any) => {
+    const key = scopedFieldKey(String(r?.fieldKey || ""), scope)
+    return isAnswerProvided((answers as any)?.[key]) && typeof r?.value === "string" && String(r.value).trim() !== ""
+  }
+
+  if (!branches.length && Array.isArray(data?.rules)) {
+    const rules = data.rules as any[]
+    if (!rules.length) return false
+    return rules.every(isRuleReady)
+  }
+
+  const hasAnyRules = branches.some((b: any) => Array.isArray(b?.rules) && b.rules.length > 0)
+  if (!hasAnyRules) return false
+
+  return branches.some((b: any) => {
+    const rules = Array.isArray(b?.rules) ? b.rules : []
+    if (!rules.length) return false
+    return rules.every(isRuleReady)
+  })
+}
+
+function evaluateConditionNodeScoped(node: Extract<FlowNode, { type: "condition" }>, answers: UserAnswers, scope?: TraverseScope) {
+  const data: any = node.data || {}
+
+  const branches = Array.isArray(data?.branches) ? data.branches : []
+
+  const evaluateRuleScoped = (r: any) => {
+    const next = { ...(r || {}), fieldKey: scopedFieldKey(String(r?.fieldKey || ""), scope) }
+    return evaluateRule(next as any, answers)
+  }
+
+  if (!branches.length && Array.isArray(data?.rules)) {
+    const rules = data.rules as any[]
+    const checks = rules.map((r) => evaluateRuleScoped(r))
+    const logic = String(data?.logic || "AND") as "AND" | "OR"
+    const value = logic === "AND" ? checks.every(Boolean) : checks.some(Boolean)
+    return value ? "true" : "false"
+  }
+
+  for (const b of branches) {
+    const key = String(b?.key || "").trim()
+    if (!key) continue
+
+    const rules = Array.isArray(b?.rules) ? b.rules : []
+    if (!rules.length) continue
+    const checks = rules.map((r: any) => evaluateRuleScoped(r))
+    const logic = String(b?.logic || "AND") as "AND" | "OR"
+    const ok = logic === "AND" ? checks.every(Boolean) : checks.some(Boolean)
+    if (ok) return key
+  }
+
+  const fallback = typeof data?.fallbackBranchKey === "string" ? data.fallbackBranchKey.trim() : ""
+  return fallback || "default"
+}
+
 function pickDefaultEdgeTarget(flow: FlowDefinition, sourceId: string) {
   const edges = getOutgoingEdges(flow, sourceId)
   const chosen = edges.find((e) => !edgeBranchKey(e))
@@ -46,7 +125,7 @@ function pickDefaultEdgeTarget(flow: FlowDefinition, sourceId: string) {
 function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
   const activeQuestions: Extract<FlowNode, { type: "question" }>[] = []
   const pendingUploadNodes: Extract<FlowNode, { type: "upload" }>[] = []
-  const queue: string[] = [String(flow.startNodeId || "")]
+  const queue: QueueItem[] = [{ nodeId: String(flow.startNodeId || "") }]
   const visited = new Set<string>()
   let firstTerminal: FlowRunResult | null = null
 
@@ -71,22 +150,30 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
   }
 
   while (queue.length) {
-    const currentNodeId = String(queue.shift() || "")
+    const current = queue.shift()
+    const currentNodeId = String(current?.nodeId || "")
     if (!currentNodeId) continue
-    if (visited.has(currentNodeId)) continue
-    visited.add(currentNodeId)
+    const visitKey = `${currentNodeId}::${String(current?.scope?.key || "")}`
+    if (visited.has(visitKey)) continue
+    visited.add(visitKey)
 
     const node = getNode(flow, currentNodeId)
     if (!node) continue
 
     if (node.type === "question") {
-      const key = node.data.fieldKey
-      if (!isAnswerProvided(answers[key])) {
-        activeQuestions.push(node)
+      const effectiveKey = scopedFieldKey(node.data.fieldKey, current?.scope)
+      if (!isAnswerProvided((answers as any)[effectiveKey])) {
+        activeQuestions.push({
+          ...node,
+          data: {
+            ...node.data,
+            fieldKey: effectiveKey,
+          },
+        })
         continue
       }
       const next = pickSingleOutgoingTarget(flow, node.id)
-      if (next) queue.push(next)
+      if (next) queue.push({ nodeId: next, scope: current?.scope })
       continue
     }
 
@@ -96,15 +183,16 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
         continue
       }
       const next = pickSingleOutgoingTarget(flow, node.id)
-      if (next) queue.push(next)
+      if (next) queue.push({ nodeId: next, scope: current?.scope })
       continue
     }
 
     if (node.type === "openaiVision") {
       const outputFieldKey = String((node as any)?.data?.outputFieldKey || "")
+
       if (outputFieldKey && isAnswerProvided((answers as any)?.[outputFieldKey])) {
         const next = pickSingleOutgoingTarget(flow, node.id)
-        if (next) queue.push(next)
+        if (next) queue.push({ nodeId: next, scope: current?.scope })
         continue
       }
 
@@ -121,37 +209,55 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
     }
 
     if (node.type === "condition") {
-      if (!canEvaluateCondition(node, answers)) {
+      if (!canEvaluateConditionScoped(node, answers, current?.scope)) {
         continue
       }
-      const branchKey = evaluateConditionNode(node, answers)
+      const branchKey = evaluateConditionNodeScoped(node, answers, current?.scope)
       const edges = getOutgoingEdges(flow, node.id)
       const chosen = edges.find((e) => edgeBranchKey(e) === String(branchKey)) || edges.find((e) => !edgeBranchKey(e))
-      if (chosen?.target) queue.push(chosen.target)
+      if (chosen?.target) queue.push({ nodeId: chosen.target, scope: current?.scope })
       continue
     }
 
     if (node.type === "decisionTree") {
       const fieldKey = String((node as any)?.data?.fieldKey || "")
-      const selected = listSelectedOptionIds((answers as any)?.[fieldKey])
+      const raw = (answers as any)?.[fieldKey]
+      const selected = listSelectedOptionIds(raw)
       const edges = getOutgoingEdges(flow, node.id)
 
-      const targets: string[] = []
+      const quantityEnabled = isQuantityEnabledForFieldKey(flow, fieldKey)
+      const quantityMap = quantityEnabled && raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, any>) : null
+
+      const targets: { nodeId: string; scope?: TraverseScope }[] = []
       const seenTargets = new Set<string>()
 
       for (const optId of selected) {
         const match = edges.find((e) => edgeBranchKey(e) === String(optId))
         const t = match?.target
-        if (t && !seenTargets.has(String(t))) {
-          targets.push(String(t))
-          seenTargets.add(String(t))
+        if (!t) continue
+
+        if (!quantityMap) {
+          if (!seenTargets.has(String(t))) {
+            targets.push({ nodeId: String(t), scope: current?.scope })
+            seenTargets.add(String(t))
+          }
+          continue
+        }
+
+        const countRaw = quantityMap[String(optId)]
+        const count = typeof countRaw === "number" && Number.isFinite(countRaw) ? Math.max(0, Math.floor(countRaw)) : 0
+        if (count <= 0) continue
+
+        for (let i = 1; i <= count; i += 1) {
+          const scopeKey = `${fieldKey}::${String(optId)}::${i}`
+          targets.push({ nodeId: String(t), scope: { key: scopeKey } })
         }
       }
 
       if (!targets.length) {
         const def = pickDefaultEdgeTarget(flow, node.id)
         if (def && !seenTargets.has(String(def))) {
-          targets.push(String(def))
+          targets.push({ nodeId: String(def), scope: current?.scope })
           seenTargets.add(String(def))
         }
       }
@@ -210,7 +316,7 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
         }
 
         if (nextNode.type !== "result" && nextNode.type !== "alert") {
-          queue.push(next)
+          queue.push({ nodeId: next, scope: current?.scope })
         }
       }
       continue

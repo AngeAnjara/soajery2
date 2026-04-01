@@ -628,7 +628,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
 
             if (q.data.inputType === "boolean") {
               return (
-                <div key={q.id} className="space-y-2 opacity-80">
+                <div key={`${q.id}::${fieldKey}`} className="space-y-2 opacity-80">
                   <div className="text-sm font-medium">{label}</div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     <label className="flex items-center gap-2 text-sm">
@@ -646,7 +646,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
 
             if (q.data.inputType === "text") {
               return (
-                <div key={q.id} className="space-y-2 opacity-80">
+                <div key={`${q.id}::${fieldKey}`} className="space-y-2 opacity-80">
                   <div className="text-sm font-medium">{label}</div>
                   <input
                     className="h-10 w-full rounded-md border bg-background px-3 text-sm"
@@ -660,7 +660,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
 
             if (q.data.inputType === "number") {
               return (
-                <div key={q.id} className="space-y-2 opacity-80">
+                <div key={`${q.id}::${fieldKey}`} className="space-y-2 opacity-80">
                   <div className="text-sm font-medium">{label}</div>
                   <input
                     type="number"
@@ -700,7 +700,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
                     : {}
 
               return (
-                <div key={q.id} className="space-y-2 opacity-80">
+                <div key={`${q.id}::${fieldKey}`} className="space-y-2 opacity-80">
                   <div className="text-sm font-medium">{label}</div>
                   <div className="flex flex-col gap-2">
                     {options.map((opt) => {
@@ -721,7 +721,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
               .map((o: any) => (typeof o === "string" ? o : String(o?.label || o?.id || "").trim()))
               .filter((x: any) => typeof x === "string" && x.trim() !== "") as string[]
             return (
-              <div key={q.id} className="space-y-2 opacity-80">
+              <div key={`${q.id}::${fieldKey}`} className="space-y-2 opacity-80">
                 <div className="text-sm font-medium">{label}</div>
                 <select
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm"
@@ -749,7 +749,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
 
           if (q.data.inputType === "boolean") {
             return (
-              <div key={q.id} className="space-y-2">
+              <div key={`${q.id}::${fieldKey}`} className="space-y-2">
                 <div className="text-sm font-medium">{label}</div>
                 <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                   <label className="flex cursor-pointer items-center gap-2 text-sm">
@@ -777,7 +777,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
 
           if (q.data.inputType === "text") {
             return (
-              <div key={q.id} className="space-y-2">
+              <div key={`${q.id}::${fieldKey}`} className="space-y-2">
                 <div className="text-sm font-medium">{label}</div>
                 <input
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm"
@@ -790,7 +790,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
 
           if (q.data.inputType === "number") {
             return (
-              <div key={q.id} className="space-y-2">
+              <div key={`${q.id}::${fieldKey}`} className="space-y-2">
                 <div className="text-sm font-medium">{label}</div>
                 <input
                   type="number"
@@ -820,7 +820,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
               }
 
               return (
-                <div key={q.id} className="space-y-2">
+                <div key={`${q.id}::${fieldKey}`} className="space-y-2">
                   <div className="text-sm font-medium">{label}</div>
                   <div className="flex flex-col gap-2">
                     {options.map((opt) => (
@@ -862,7 +862,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
             }
 
             return (
-              <div key={q.id} className="space-y-2">
+              <div key={`${q.id}::${fieldKey}`} className="space-y-2">
                 <div className="text-sm font-medium">{label}</div>
                 <div className="flex flex-col gap-2">
                   {options.map((opt) => {
@@ -900,7 +900,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
             .filter((x: any) => typeof x === "string" && x.trim() !== "") as string[]
 
           return (
-            <div key={q.id} className="space-y-2">
+            <div key={`${q.id}::${fieldKey}`} className="space-y-2">
               <div className="text-sm font-medium">{label}</div>
               <select
                 className="h-10 w-full rounded-md border bg-background px-3 text-sm"

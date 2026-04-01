@@ -5,7 +5,7 @@ export type VerificationResultStatus = "pending" | "unlocked"
 export interface IVerificationResult extends mongoose.Document {
   userId: mongoose.Types.ObjectId
   flowId: mongoose.Types.ObjectId
-  answers: Record<string, string | string[] | boolean | number>
+  answers: Record<string, any>
   createdAt?: Date
   updatedAt?: Date
   aiAnalysis?: {

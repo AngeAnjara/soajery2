@@ -19,7 +19,12 @@ function breadcrumbFromPath(pathname: string) {
 export function AdminHeader() {
   const pathname = usePathname()
   const router = useRouter()
-  const { theme, setTheme } = useTheme()
+  const { theme, resolvedTheme, setTheme } = useTheme()
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const crumbs = React.useMemo(() => breadcrumbFromPath(pathname), [pathname])
 
@@ -40,10 +45,10 @@ export function AdminHeader() {
           variant="outline"
           size="sm"
           onClick={() => {
-            setTheme(theme === "dark" ? "light" : "dark")
+            setTheme((resolvedTheme || theme) === "dark" ? "light" : "dark")
           }}
         >
-          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          {mounted ? ((resolvedTheme || theme) === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />) : null}
         </Button>
 
         <DropdownMenu.Root>
