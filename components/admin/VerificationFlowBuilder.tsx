@@ -323,7 +323,14 @@ export function VerificationFlowBuilder() {
       const targetKind = String(targetNode.type || "")
 
       const allowed =
-        (sourceKind === "questionNode" && (targetKind === "conditionNode" || targetKind === "decisionTreeNode" || targetKind === "questionNode")) ||
+        (sourceKind === "questionNode" &&
+          (targetKind === "conditionNode" ||
+            targetKind === "decisionTreeNode" ||
+            targetKind === "questionNode" ||
+            targetKind === "actionNode" ||
+            targetKind === "resultNode" ||
+            targetKind === "alertNode" ||
+            targetKind === "flowNode")) ||
         (sourceKind === "decisionTreeNode" &&
           (targetKind === "questionNode" || targetKind === "conditionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
         (sourceKind === "conditionNode" &&
