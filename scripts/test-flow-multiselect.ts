@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 
 import type { FlowDefinition } from "@/types/flow"
-import { getVisibleQuestionSequence, runFlow } from "@/services/flowRunner"
+import { getVisibleQuestionSequence, runChainedFlows, runFlow } from "@/services/flowRunner"
 
 const flowRepeatQuestion: FlowDefinition = {
   version: 1,
@@ -146,4 +146,70 @@ const fallbackRun = runFlow(flowFallbackConditionAfterDecisionTree, { items: ["a
 assert.equal(fallbackRun.actionType, "transition")
 assert.equal(fallbackRun.transition?.flowId, "fallback-flow")
 
-console.log("ok - decision tree repeats question and preserves downstream flow/action visibility")
+
+
+const targetFlow: FlowDefinition = {
+  version: 1,
+  status: "draft",
+  startNodeId: "qTarget",
+  nodes: [
+    {
+      id: "qTarget",
+      type: "question",
+      position: { x: 0, y: 0 },
+      data: { label: "Scoped detail", fieldKey: "detail", inputType: "text" },
+    },
+  ],
+  edges: [],
+}
+
+const startFlowTemplate = (repeatWithScope: boolean): FlowDefinition => ({
+  version: 1,
+  status: "draft",
+  startNodeId: "q1",
+  nodes: [
+    {
+      id: "q1",
+      type: "question",
+      position: { x: 0, y: 0 },
+      data: { label: "Select items", fieldKey: "items", inputType: "multi_select", options: ["a"] },
+    },
+    { id: "d1", type: "decisionTree", position: { x: 200, y: 0 }, data: { fieldKey: "items" } },
+    {
+      id: "f1",
+      type: "flow",
+      position: { x: 400, y: 0 },
+      data: { repeatWithScope, target: { flowId: "target", entry: { type: "start" } } },
+    },
+  ],
+  edges: [
+    { id: "e1", source: "q1", target: "d1" },
+    { id: "e2", source: "d1", target: "f1", branchKey: "a" },
+  ],
+})
+
+;(async () => {
+const withScope = await runChainedFlows({
+  startFlowId: "start",
+  startFlow: startFlowTemplate(true),
+  answers: { items: ["a"], "detail__items::a": "ok" },
+  getFlowById: async (flowId) => (flowId === "target" ? targetFlow : null),
+})
+assert.equal(withScope.flowId, "target")
+assert.equal(withScope.run.nextNodeId, undefined)
+
+const withoutScope = await runChainedFlows({
+  startFlowId: "start",
+  startFlow: startFlowTemplate(false),
+  answers: { items: ["a"], "detail__items::a": "ok" },
+  getFlowById: async (flowId) => (flowId === "target" ? targetFlow : null),
+})
+assert.equal(withoutScope.flowId, "target")
+assert.equal(withoutScope.run.nextNodeId, "qTarget")
+
+
+})().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})
+
