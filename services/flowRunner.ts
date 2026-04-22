@@ -229,7 +229,6 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
       const quantityMap = quantityEnabled && raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, any>) : null
 
       const targets: { nodeId: string; scope?: TraverseScope }[] = []
-      const seenTargets = new Set<string>()
 
       for (const optId of selected) {
         const match = edges.find((e) => edgeBranchKey(e) === String(optId))
@@ -237,10 +236,12 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
         if (!t) continue
 
         if (!quantityMap) {
-          if (!seenTargets.has(String(t))) {
-            targets.push({ nodeId: String(t), scope: current?.scope })
-            seenTargets.add(String(t))
-          }
+          // Important: in classic multi_select (without quantities), we must preserve
+          // one traversal per selected option, even if multiple options point to the
+          // same target node.
+          const scopePrefix = current?.scope?.key ? `${current.scope.key}::` : ""
+          const scopeKey = `${scopePrefix}${fieldKey}::${String(optId)}`
+          targets.push({ nodeId: String(t), scope: { key: scopeKey } })
           continue
         }
 
@@ -249,16 +250,16 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
         if (count <= 0) continue
 
         for (let i = 1; i <= count; i += 1) {
-          const scopeKey = `${fieldKey}::${String(optId)}::${i}`
+          const scopePrefix = current?.scope?.key ? `${current.scope.key}::` : ""
+          const scopeKey = `${scopePrefix}${fieldKey}::${String(optId)}::${i}`
           targets.push({ nodeId: String(t), scope: { key: scopeKey } })
         }
       }
 
       if (!targets.length) {
         const def = pickDefaultEdgeTarget(flow, node.id)
-        if (def && !seenTargets.has(String(def))) {
+        if (def) {
           targets.push({ nodeId: String(def), scope: current?.scope })
-          seenTargets.add(String(def))
         }
       }
 
