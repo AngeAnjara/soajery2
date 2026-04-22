@@ -115,6 +115,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     return NextResponse.json({
       resolvedFlowId: resolved.resolvedFlowId,
+      scopeKeys: scopes.map((s) => String((s as any)?.key || "")).filter((k) => k),
       questions,
       pendingUploadNodeId: pendingUploadNodeId || undefined,
       uploadNode: uploadNode || undefined,
@@ -163,6 +164,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     return NextResponse.json({
       resolvedFlowId: resolved.resolvedFlowId,
+      scopeKeys: scopes.map((s) => String((s as any)?.key || "")).filter((k) => k),
       questions,
       pendingUploadNodeId: pendingUploadNodeId || undefined,
       uploadNode: uploadNode || undefined,

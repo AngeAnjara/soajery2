@@ -209,6 +209,24 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         throw new Error(data?.error || "Erreur")
       }
 
+      const resolvedFlowId = typeof (data as any)?.resolvedFlowId === "string" ? String((data as any).resolvedFlowId).trim() : ""
+      const scopeKeys = Array.isArray((data as any)?.scopeKeys)
+        ? ((data as any).scopeKeys as any[]).map((k) => String(k || "").trim()).filter((k) => k)
+        : []
+
+      if (resolvedFlowId && resolvedFlowId !== String(flowId) && scopeKeys.length <= 1) {
+        if (onRedirect) {
+          onRedirect(resolvedFlowId)
+        }
+        return {
+          stale: false,
+          redirected: true,
+          questions: [] as any[],
+          terminalAlert: false,
+          preview: null,
+        }
+      }
+
       return {
         stale: false,
         redirected: false,
