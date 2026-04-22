@@ -23,6 +23,7 @@ import { BuilderContextMenu } from "@/components/admin/builder/BuilderContextMen
 import { ConditionNode } from "@/components/admin/builder/ConditionNode"
 import { ActionNode } from "@/components/admin/builder/ActionNode"
 import { QuestionNode } from "@/components/admin/builder/QuestionNode"
+import { QuestionGroupNode } from "@/components/admin/builder/QuestionGroupNode"
 import { DecisionTreeNode } from "@/components/admin/builder/DecisionTreeNode"
 import { ResultNode } from "@/components/admin/builder/ResultNode"
 import { AlertNode } from "@/components/admin/builder/AlertNode"
@@ -33,6 +34,7 @@ import { Button } from "@/components/ui/button"
 
 const nodeTypes = {
   questionNode: QuestionNode,
+  questionGroupNode: QuestionGroupNode,
   conditionNode: ConditionNode,
   decisionTreeNode: DecisionTreeNode,
   actionNode: ActionNode,
@@ -128,6 +130,8 @@ export function VerificationFlowBuilder() {
           type:
             n.type === "question"
               ? "questionNode"
+              : n.type === "questionGroup"
+                ? "questionGroupNode"
               : n.type === "condition"
                 ? "conditionNode"
                 : n.type === "decisionTree"
@@ -230,15 +234,26 @@ export function VerificationFlowBuilder() {
 
     if (e === "node") {
       setNodeForm(kind || {})
-      const opts = Array.isArray(kind?.data?.options) ? kind.data.options : []
-      setNodeOptionsText(
-        opts
-          .map((o: any) =>
-            typeof o === "string" ? o : `${String(o?.label || o?.id || "")}${o?.maxCount ? `|${Number(o.maxCount)}` : ""}`,
-          )
-          .filter(Boolean)
-          .join("\n"),
-      )
+      const isQuestionGroup = String(kind?.type || "") === "questionGroupNode"
+      if (isQuestionGroup) {
+        const rows = Array.isArray(kind?.data?.questions) ? kind.data.questions : []
+        setNodeOptionsText(
+          rows
+            .map((q: any) => `${String(q?.fieldKey || "").trim()}|${String(q?.label || "").trim()}|${String(q?.inputType || "text")}`)
+            .filter(Boolean)
+            .join("\n"),
+        )
+      } else {
+        const opts = Array.isArray(kind?.data?.options) ? kind.data.options : []
+        setNodeOptionsText(
+          opts
+            .map((o: any) =>
+              typeof o === "string" ? o : `${String(o?.label || o?.id || "")}${o?.maxCount ? `|${Number(o.maxCount)}` : ""}`,
+            )
+            .filter(Boolean)
+            .join("\n"),
+        )
+      }
     }
 
     setOpen(true)
@@ -294,15 +309,26 @@ export function VerificationFlowBuilder() {
 
     if (e === "node") {
       setNodeForm(row)
-      const opts = Array.isArray(row?.data?.options) ? row.data.options : []
-      setNodeOptionsText(
-        opts
-          .map((o: any) =>
-            typeof o === "string" ? o : `${String(o?.label || o?.id || "")}${o?.maxCount ? `|${Number(o.maxCount)}` : ""}`,
-          )
-          .filter(Boolean)
-          .join("\n"),
-      )
+      const isQuestionGroup = String(row?.type || "") === "questionGroupNode"
+      if (isQuestionGroup) {
+        const rows = Array.isArray(row?.data?.questions) ? row.data.questions : []
+        setNodeOptionsText(
+          rows
+            .map((q: any) => `${String(q?.fieldKey || "").trim()}|${String(q?.label || "").trim()}|${String(q?.inputType || "text")}`)
+            .filter(Boolean)
+            .join("\n"),
+        )
+      } else {
+        const opts = Array.isArray(row?.data?.options) ? row.data.options : []
+        setNodeOptionsText(
+          opts
+            .map((o: any) =>
+              typeof o === "string" ? o : `${String(o?.label || o?.id || "")}${o?.maxCount ? `|${Number(o.maxCount)}` : ""}`,
+            )
+            .filter(Boolean)
+            .join("\n"),
+        )
+      }
     }
 
     setOpen(true)
@@ -321,26 +347,28 @@ export function VerificationFlowBuilder() {
 
       const sourceKind = String(sourceNode.type || "")
       const targetKind = String(targetNode.type || "")
+      const sourceIsQuestionLike = sourceKind === "questionNode" || sourceKind === "questionGroupNode"
+      const targetIsQuestionLike = targetKind === "questionNode" || targetKind === "questionGroupNode"
 
       const allowed =
-        (sourceKind === "questionNode" &&
+        (sourceIsQuestionLike &&
           (targetKind === "conditionNode" ||
             targetKind === "decisionTreeNode" ||
-            targetKind === "questionNode" ||
+            targetIsQuestionLike ||
             targetKind === "actionNode" ||
             targetKind === "resultNode" ||
             targetKind === "alertNode" ||
             targetKind === "flowNode")) ||
         (sourceKind === "decisionTreeNode" &&
-          (targetKind === "questionNode" || targetKind === "conditionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
+          (targetIsQuestionLike || targetKind === "conditionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
         (sourceKind === "conditionNode" &&
-          (targetKind === "questionNode" || targetKind === "decisionTreeNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
+          (targetIsQuestionLike || targetKind === "decisionTreeNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
         (sourceKind === "actionNode" && (targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
         (sourceKind === "uploadNode" && (targetKind === "conditionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode")) ||
         (sourceKind === "uploadNode" && targetKind === "openaiVisionNode") ||
         (sourceKind === "openaiVisionNode" &&
           (targetKind === "conditionNode" || targetKind === "actionNode" || targetKind === "resultNode" || targetKind === "alertNode" || targetKind === "flowNode")) ||
-        (sourceKind === "questionNode" && targetKind === "uploadNode") ||
+        (sourceIsQuestionLike && targetKind === "uploadNode") ||
         (sourceKind === "conditionNode" && targetKind === "uploadNode") ||
         (sourceKind === "decisionTreeNode" && targetKind === "uploadNode")
 
@@ -569,6 +597,31 @@ export function VerificationFlowBuilder() {
               const id = createNodeId("n")
               const node: Node = {
                 id,
+                type: "questionGroupNode",
+                data: {
+                  title: "Questions multiples",
+                  questions: [
+                    { label: "Question 1", fieldKey: `field_${rfNodes.length + 1}_1`, inputType: "text" },
+                    { label: "Question 2", fieldKey: `field_${rfNodes.length + 1}_2`, inputType: "text" },
+                  ],
+                },
+                position: { x: 40, y: 140 },
+              }
+              setRfNodes((prev) => [...prev, node])
+              setIsDirty(true)
+            }}
+            disabled={!flowId}
+          >
+            + Question multiple
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              if (!flowId) return
+              const id = createNodeId("n")
+              const node: Node = {
+                id,
                 type: "decisionTreeNode",
                 data: { fieldKey: `field_${rfNodes.length + 1}` },
                 position: { x: 560, y: 40 },
@@ -753,8 +806,14 @@ export function VerificationFlowBuilder() {
 
                 const questionFieldKeys = new Set(
                   rfNodes
-                    .filter((n) => n.type === "questionNode")
-                    .map((n) => String((n as any)?.data?.fieldKey || ""))
+                    .flatMap((n) => {
+                      if (n.type === "questionNode") return [String((n as any)?.data?.fieldKey || "")]
+                      if (n.type === "questionGroupNode") {
+                        const raw = Array.isArray((n as any)?.data?.questions) ? (n as any).data.questions : []
+                        return raw.map((q: any) => String(q?.fieldKey || ""))
+                      }
+                      return []
+                    })
                     .filter(Boolean),
                 )
 
@@ -773,6 +832,36 @@ export function VerificationFlowBuilder() {
                   startNodeId,
                   version: 1,
                   nodes: rfNodes.map((n) => {
+                    if (n.type === "questionGroupNode") {
+                      const rawQuestions = Array.isArray((n as any)?.data?.questions) ? (n as any).data.questions : []
+                      const questions = rawQuestions
+                        .map((q: any) => {
+                          const fieldKey = String(q?.fieldKey || "").trim()
+                          const label = String(q?.label || fieldKey || "").trim()
+                          const inputType = String(q?.inputType || "text")
+                          if (!fieldKey || !label) return null
+                          return {
+                            label,
+                            fieldKey,
+                            inputType,
+                            allowQuantity: !!q?.allowQuantity,
+                            options: Array.isArray(q?.options) ? q.options : undefined,
+                          }
+                        })
+                        .filter(Boolean)
+                      if (!questions.length) {
+                        throw new Error("Question multiple invalide: au moins une question requise")
+                      }
+                      return {
+                        id: String(n.id),
+                        type: "questionGroup",
+                        position: n.position,
+                        data: {
+                          title: String((n as any)?.data?.title || "Questions multiples"),
+                          questions,
+                        },
+                      }
+                    }
                     if (n.type === "flowNode") {
                       const fid = String((n as any)?.data?.target?.flowId || "").trim()
                       if (!fid) {
@@ -994,6 +1083,7 @@ export function VerificationFlowBuilder() {
         const inputType = String(nodeForm?.data?.inputType || "")
         const allowQuantity = !!nodeForm?.data?.allowQuantity
         const shouldApplyOptions = ["select", "multi_select"].includes(inputType)
+        const isQuestionGroupNode = String(nodeForm?.type || "") === "questionGroupNode"
 
         const normalizedOptions =
           inputType === "multi_select" && allowQuantity
@@ -1025,6 +1115,20 @@ export function VerificationFlowBuilder() {
           type: nodeType,
           data: {
             ...(nodeForm.data || {}),
+            ...(isQuestionGroupNode
+              ? {
+                  questions: optionLines
+                    .map((line) => {
+                      const [rawFieldKey, rawLabel, rawInputType] = line.split("|")
+                      const fieldKey = String(rawFieldKey || "").trim()
+                      const label = String(rawLabel || rawFieldKey || "").trim()
+                      const questionInputType = String(rawInputType || "text").trim() as any
+                      if (!fieldKey || !label) return null
+                      return { fieldKey, label, inputType: questionInputType }
+                    })
+                    .filter(Boolean),
+                }
+              : {}),
             ...(shouldApplyOptions ? { options: normalizedOptions } : {}),
           },
           position: mode === "edit" ? editing.position : { x: 80, y: 80 },
@@ -1398,6 +1502,7 @@ export function VerificationFlowBuilder() {
                 className="h-10 w-full rounded-md border bg-background px-3 text-sm"
               >
                 <option value="questionNode">question</option>
+                <option value="questionGroupNode">question multiple</option>
                 <option value="conditionNode">condition</option>
                 <option value="decisionTreeNode">decision tree</option>
                 <option value="actionNode">action</option>
@@ -1533,6 +1638,27 @@ export function VerificationFlowBuilder() {
                   />
                   Inclure dans prompt AI
                 </label>
+              </div>
+            ) : null}
+
+            {String(nodeForm.type || "questionNode") === "questionGroupNode" ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Titre</label>
+                  <input
+                    value={String(nodeForm.data?.title || "Questions multiples")}
+                    onChange={(e) => setNodeForm((p: any) => ({ ...p, data: { ...(p.data || {}), title: e.target.value } }))}
+                    className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Questions (fieldKey|label|inputType, une par ligne)</label>
+                  <textarea
+                    value={nodeOptionsText}
+                    onChange={(e) => setNodeOptionsText(e.target.value)}
+                    className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
               </div>
             ) : null}
 

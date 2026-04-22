@@ -195,6 +195,41 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers, sta
       continue
     }
 
+    if (node.type === "questionGroup") {
+      const rawQuestions = Array.isArray((node as any)?.data?.questions) ? ((node as any).data.questions as any[]) : []
+      const unresolved: Extract<FlowNode, { type: "question" }>[] = rawQuestions
+        .map((q: any, idx: number) => {
+          const fieldKey = String(q?.fieldKey || "").trim()
+          const label = String(q?.label || fieldKey || "").trim()
+          const inputType = String(q?.inputType || "text") as any
+          if (!fieldKey || !label) return null
+          const effectiveKey = scopedFieldKey(fieldKey, current?.scope)
+          if (isAnswerProvided((answers as any)[effectiveKey])) return null
+          return {
+            id: `${node.id}::qg::${idx}::${effectiveKey}`,
+            type: "question" as const,
+            position: node.position,
+            data: {
+              label,
+              fieldKey: effectiveKey,
+              inputType,
+              allowQuantity: !!q?.allowQuantity,
+              options: Array.isArray(q?.options) ? q.options : undefined,
+            },
+          }
+        })
+        .filter(Boolean) as Extract<FlowNode, { type: "question" }>[]
+
+      if (unresolved.length) {
+        activeQuestions.push(...unresolved)
+        continue
+      }
+
+      const next = pickSingleOutgoingTarget(flow, node.id)
+      if (next) queue.push({ nodeId: next, scope: current?.scope })
+      continue
+    }
+
     if (node.type === "upload") {
       if (!isUploadSatisfied(node)) {
         pendingUploadNodes.push(node)
@@ -681,6 +716,31 @@ export function getQuestionSequence(flow: FlowDefinition) {
 
     if (node.type === "question") {
       ordered.push(node)
+      const next = pickSingleOutgoingTarget(flow, node.id)
+      if (!next) break
+      currentNodeId = next
+      continue
+    }
+
+    if (node.type === "questionGroup") {
+      const groupQuestions = Array.isArray((node as any)?.data?.questions) ? (node as any).data.questions : []
+      groupQuestions.forEach((q: any, idx: number) => {
+        const fieldKey = String(q?.fieldKey || "").trim()
+        const label = String(q?.label || fieldKey || "").trim()
+        if (!fieldKey || !label) return
+        ordered.push({
+          id: `${node.id}::qg::${idx}`,
+          type: "question",
+          position: node.position,
+          data: {
+            label,
+            fieldKey,
+            inputType: String(q?.inputType || "text") as any,
+            allowQuantity: !!q?.allowQuantity,
+            options: Array.isArray(q?.options) ? q.options : undefined,
+          },
+        } as any)
+      })
       const next = pickSingleOutgoingTarget(flow, node.id)
       if (!next) break
       currentNodeId = next
