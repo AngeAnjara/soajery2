@@ -80,6 +80,36 @@ const flowSchemaObject = z.object({
       }),
       z.object({
         id: z.string().min(1),
+        type: z.literal("questionGroup"),
+        position: z.object({ x: z.number(), y: z.number() }),
+        data: z.object({
+          title: z.string().optional(),
+          questions: z
+            .array(
+              z.object({
+                label: z.string().min(1),
+                fieldKey: z.string().min(1),
+                inputType: z.enum(["boolean", "select", "multi_select", "text", "number"]),
+                allowQuantity: z.boolean().optional(),
+                options: z
+                  .union([
+                    z.array(z.string()),
+                    z.array(
+                      z.object({
+                        id: z.string().min(1),
+                        label: z.string().min(1),
+                        maxCount: z.number().int().positive().optional(),
+                      }),
+                    ),
+                  ])
+                  .optional(),
+              }),
+            )
+            .min(1),
+        }),
+      }),
+      z.object({
+        id: z.string().min(1),
         type: z.literal("condition"),
         position: z.object({ x: z.number(), y: z.number() }),
         data: z
@@ -285,7 +315,7 @@ export const createFlowSchema = flowSchemaObject.superRefine((val, ctx) => {
 
   for (const [source, count] of outgoingBySource.entries()) {
     const t = nodeTypeById.get(source)
-    if (t === "question" || t === "action" || t === "upload" || t === "openaiVision") {
+    if (t === "question" || t === "questionGroup" || t === "action" || t === "upload" || t === "openaiVision") {
       if (count > 1) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -328,7 +358,7 @@ export const patchFlowSchema = flowSchemaObject.partial().superRefine((val, ctx)
 
   for (const [source, count] of outgoingBySource.entries()) {
     const t = nodeTypeById.get(source)
-    if (t === "question" || t === "action" || t === "upload" || t === "openaiVision") {
+    if (t === "question" || t === "questionGroup" || t === "action" || t === "upload" || t === "openaiVision") {
       if (count > 1) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
