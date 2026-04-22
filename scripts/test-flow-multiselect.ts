@@ -148,6 +148,38 @@ assert.equal(fallbackRun.transition?.flowId, "fallback-flow")
 
 
 
+
+
+const flowJumpRepeatAllScopes: FlowDefinition = {
+  version: 1,
+  status: "draft",
+  startNodeId: "q1",
+  nodes: [
+    {
+      id: "q1",
+      type: "question",
+      position: { x: 0, y: 0 },
+      data: { label: "Select items", fieldKey: "items", inputType: "multi_select", options: ["a", "b"] },
+    },
+    { id: "d1", type: "decisionTree", position: { x: 200, y: 0 }, data: { fieldKey: "items" } },
+    {
+      id: "f1",
+      type: "flow",
+      position: { x: 400, y: 0 },
+      data: { repeatWithScope: true, target: { flowId: "target", entry: { type: "start" } } },
+    },
+  ],
+  edges: [
+    { id: "e1", source: "q1", target: "d1" },
+    { id: "e2", source: "d1", target: "f1", branchKey: "a" },
+    { id: "e3", source: "d1", target: "f1", branchKey: "b" },
+  ],
+}
+
+const jumpRun = runFlow(flowJumpRepeatAllScopes, { items: ["a", "b"] })
+assert.equal(jumpRun.actionType, "transition")
+assert.deepEqual(jumpRun.transitionScopeKeys, ["items::a", "items::b"])
+
 const targetFlow: FlowDefinition = {
   version: 1,
   status: "draft",
@@ -207,6 +239,7 @@ const withoutScope = await runChainedFlows({
 assert.equal(withoutScope.flowId, "target")
 assert.equal(withoutScope.run.nextNodeId, "qTarget")
 
+console.log("ok - decision tree repeat flow scope behavior")
 
 })().catch((err) => {
   console.error(err)

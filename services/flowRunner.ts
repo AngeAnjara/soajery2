@@ -145,6 +145,7 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers, sta
   const queue: QueueItem[] = [{ nodeId: String(flow.startNodeId || ""), scope: startScope }]
   const visited = new Set<string>()
   let firstTerminal: FlowRunResult | null = null
+  const repeatedFlowTransitions: Array<{ target: any; scopeKey: string; fromNodeId: string }> = []
 
   const isUploadSatisfied = (node: Extract<FlowNode, { type: "upload" }>) => {
     const key = node.data.fieldKey
@@ -286,6 +287,14 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers, sta
 
     if (node.type === "flow") {
       const target = (node as any)?.data?.target
+      const repeatWithScope = !!(node as any)?.data?.repeatWithScope
+      if (target?.flowId) {
+        const scopeKey = String(current?.scope?.key || "").trim()
+        if (repeatWithScope && scopeKey) {
+          repeatedFlowTransitions.push({ target, scopeKey, fromNodeId: node.id })
+          continue
+        }
+      }
       if (!firstTerminal && target?.flowId) {
         const repeatWithScope = !!(node as any)?.data?.repeatWithScope
         firstTerminal = {
@@ -357,6 +366,29 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers, sta
         description: (node as any).data?.text || "",
       }
       continue
+    }
+  }
+
+  if (!firstTerminal && repeatedFlowTransitions.length) {
+    const first = repeatedFlowTransitions[0]
+    const firstFlowId = String(first?.target?.flowId || "")
+    const firstEntry = JSON.stringify((first?.target as any)?.entry || { type: "start" })
+    const scopes = Array.from(
+      new Set(
+        repeatedFlowTransitions
+          .filter((t) => String(t?.target?.flowId || "") === firstFlowId && JSON.stringify((t?.target as any)?.entry || { type: "start" }) === firstEntry)
+          .map((t) => String(t.scopeKey || "").trim())
+          .filter(Boolean),
+      ),
+    )
+
+    firstTerminal = {
+      actionType: "transition",
+      transition: first.target,
+      transitionFromNodeId: first.fromNodeId,
+      transitionKind: "flow_node",
+      transitionScopeKey: scopes[0] || "",
+      transitionScopeKeys: scopes,
     }
   }
 
@@ -501,6 +533,7 @@ export type FlowRunResult = {
   transitionFromNodeId?: string
   transitionKind?: "flow_node"
   transitionScopeKey?: string
+  transitionScopeKeys?: string[]
   resultNodeId?: string
   resultType?: "result" | "alert"
   resultColor?: "red" | "green"
@@ -578,6 +611,28 @@ export async function runChainedFlows(opts: {
       entry && typeof entry === "object" && entry.type === "node" && typeof (entry as any).nodeId === "string" && String((entry as any).nodeId).trim() !== ""
         ? String((entry as any).nodeId)
         : String(nextFlow.startNodeId || "")
+
+    const transitionScopeKeys = Array.isArray(run.transitionScopeKeys)
+      ? run.transitionScopeKeys.map((k) => String(k || "").trim()).filter(Boolean)
+      : []
+
+    if (transitionScopeKeys.length > 1) {
+      const scopedFlow = { ...nextFlow, startNodeId }
+      let firstScopedRun: FlowRunResult | null = null
+
+      for (const key of transitionScopeKeys) {
+        const scopedRun = runFlow(scopedFlow, opts.answers, { key })
+        if (!firstScopedRun) firstScopedRun = scopedRun
+
+        if (scopedRun.nextNodeId || scopedRun.pendingUploadNodeId || scopedRun.pendingVisionNodeId) {
+          return { flowId: targetFlowId, run: scopedRun, lineage }
+        }
+      }
+
+      if (firstScopedRun && firstScopedRun.actionType !== "transition") {
+        return { flowId: targetFlowId, run: firstScopedRun, lineage }
+      }
+    }
 
     currentFlowId = targetFlowId
     const transitionScopeKey = typeof run.transitionScopeKey === "string" ? run.transitionScopeKey.trim() : ""
