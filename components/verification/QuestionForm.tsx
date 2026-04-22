@@ -176,6 +176,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
   const fetchQuestions = React.useCallback(
     async (nextAnswers: Record<string, JsonValue>) => {
       const seq = ++fetchSeqRef.current
+      fetchControllerRef.current?.abort()
       const controller = new AbortController()
       fetchControllerRef.current = controller
 
@@ -188,6 +189,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       const data = await res.json()
       if (seq !== fetchSeqRef.current) {
         return {
+          stale: true,
           redirected: false,
           questions: [] as any[],
           pendingUploadNodeId: "",
@@ -216,6 +218,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         }
       }
       return {
+        stale: false,
         redirected: false,
         questions: (data?.questions || []) as any[],
         pendingUploadNodeId: typeof (data as any)?.pendingUploadNodeId === "string" ? String((data as any).pendingUploadNodeId) : "",
@@ -258,7 +261,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       try {
         if (mounted) {
           const r = await fetchQuestions({})
-          if (!r.redirected) {
+          if (!r.redirected && !(r as any)?.stale) {
             setQuestions(r.questions as any)
             setPendingUploadNodeId(String((r as any)?.pendingUploadNodeId || ""))
             setUploadNode((r as any)?.uploadNode || null)
@@ -301,7 +304,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         try {
           const r = await fetchQuestions(confirmedAnswers)
           if (!cancelled) {
-            if (!r.redirected) {
+            if (!r.redirected && !(r as any)?.stale) {
               setQuestions(r.questions as any)
               setPendingUploadNodeId(String((r as any)?.pendingUploadNodeId || ""))
               setUploadNode((r as any)?.uploadNode || null)
@@ -388,7 +391,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       setConfirmedAnswers(nextAnswers)
 
       const r = await fetchQuestions(nextAnswers)
-      if (!r.redirected) {
+      if (!r.redirected && !(r as any)?.stale) {
         setQuestions(r.questions as any)
         setPendingUploadNodeId(String((r as any)?.pendingUploadNodeId || ""))
         setUploadNode((r as any)?.uploadNode || null)
