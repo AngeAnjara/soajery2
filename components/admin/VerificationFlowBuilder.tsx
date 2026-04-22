@@ -715,7 +715,7 @@ export function VerificationFlowBuilder() {
               const node: Node = {
                 id,
                 type: "flowNode",
-                data: { target: { flowId: "", entry: { type: "start" } } },
+                data: { target: { flowId: "", entry: { type: "start" } }, repeatWithScope: false },
                 position: { x: 980, y: 240 },
               }
               setRfNodes((prev) => [...prev, node])
@@ -1264,7 +1264,7 @@ export function VerificationFlowBuilder() {
                 const node: Node = {
                   id,
                   type: "flowNode",
-                  data: { target: { flowId: "", entry: { type: "start" } } },
+                  data: { target: { flowId: "", entry: { type: "start" } }, repeatWithScope: false },
                   position: { x: 980, y: 240 },
                 }
                 setRfNodes((prev) => [...prev, node])
@@ -2051,6 +2051,23 @@ export function VerificationFlowBuilder() {
                     />
                   </div>
                 ) : null}
+
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={!!nodeForm.data?.repeatWithScope}
+                    onChange={(e) =>
+                      setNodeForm((p: any) => ({
+                        ...p,
+                        data: {
+                          ...(p.data || {}),
+                          repeatWithScope: !!e.target.checked,
+                        },
+                      }))
+                    }
+                  />
+                  <span>Répéter le flow cible selon le scope du decision tree</span>
+                </label>
               </div>
             ) : null}
           </div>

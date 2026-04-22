@@ -51,6 +51,16 @@ function scopedFieldKey(base: string, scope?: TraverseScope) {
   return `${base}__${scope.key}`
 }
 
+function hasOwn(obj: unknown, key: string) {
+  return !!obj && typeof obj === "object" && Object.prototype.hasOwnProperty.call(obj, key)
+}
+
+function resolveScopedAnswerKey(base: string, answers: UserAnswers, scope?: TraverseScope) {
+  const scoped = scopedFieldKey(base, scope)
+  if (hasOwn(answers, scoped)) return scoped
+  return base
+}
+
 function isQuantityEnabledForFieldKey(flow: FlowDefinition, fieldKey: string) {
   const key = String(fieldKey || "").trim()
   if (!key) return false
@@ -62,7 +72,8 @@ function canEvaluateConditionScoped(node: Extract<FlowNode, { type: "condition" 
   const branches = Array.isArray(data?.branches) ? data.branches : []
 
   const isRuleReady = (r: any) => {
-    const key = scopedFieldKey(String(r?.fieldKey || ""), scope)
+    const baseKey = String(r?.fieldKey || "")
+    const key = resolveScopedAnswerKey(baseKey, answers, scope)
     return isAnswerProvided((answers as any)?.[key]) && typeof r?.value === "string" && String(r.value).trim() !== ""
   }
 
@@ -73,7 +84,11 @@ function canEvaluateConditionScoped(node: Extract<FlowNode, { type: "condition" 
   }
 
   const hasAnyRules = branches.some((b: any) => Array.isArray(b?.rules) && b.rules.length > 0)
-  if (!hasAnyRules) return false
+  if (!hasAnyRules) {
+    // Keep parity with the non-scoped evaluator: a condition with no explicit
+    // rules is still evaluable and should be able to take its fallback/default branch.
+    return true
+  }
 
   return branches.some((b: any) => {
     const rules = Array.isArray(b?.rules) ? b.rules : []
@@ -88,7 +103,9 @@ function evaluateConditionNodeScoped(node: Extract<FlowNode, { type: "condition"
   const branches = Array.isArray(data?.branches) ? data.branches : []
 
   const evaluateRuleScoped = (r: any) => {
-    const next = { ...(r || {}), fieldKey: scopedFieldKey(String(r?.fieldKey || ""), scope) }
+    const baseKey = String(r?.fieldKey || "")
+    const resolvedKey = resolveScopedAnswerKey(baseKey, answers, scope)
+    const next = { ...(r || {}), fieldKey: resolvedKey }
     return evaluateRule(next as any, answers)
   }
 
@@ -122,10 +139,10 @@ function pickDefaultEdgeTarget(flow: FlowDefinition, sourceId: string) {
   return chosen?.target
 }
 
-function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
+function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers, startScope?: TraverseScope) {
   const activeQuestions: Extract<FlowNode, { type: "question" }>[] = []
   const pendingUploadNodes: Extract<FlowNode, { type: "upload" }>[] = []
-  const queue: QueueItem[] = [{ nodeId: String(flow.startNodeId || "") }]
+  const queue: QueueItem[] = [{ nodeId: String(flow.startNodeId || ""), scope: startScope }]
   const visited = new Set<string>()
   let firstTerminal: FlowRunResult | null = null
 
@@ -229,7 +246,6 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
       const quantityMap = quantityEnabled && raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, any>) : null
 
       const targets: { nodeId: string; scope?: TraverseScope }[] = []
-      const seenTargets = new Set<string>()
 
       for (const optId of selected) {
         const match = edges.find((e) => edgeBranchKey(e) === String(optId))
@@ -237,10 +253,12 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
         if (!t) continue
 
         if (!quantityMap) {
-          if (!seenTargets.has(String(t))) {
-            targets.push({ nodeId: String(t), scope: current?.scope })
-            seenTargets.add(String(t))
-          }
+          // Important: in classic multi_select (without quantities), we must preserve
+          // one traversal per selected option, even if multiple options point to the
+          // same target node.
+          const scopePrefix = current?.scope?.key ? `${current.scope.key}::` : ""
+          const scopeKey = `${scopePrefix}${fieldKey}::${String(optId)}`
+          targets.push({ nodeId: String(t), scope: { key: scopeKey } })
           continue
         }
 
@@ -249,16 +267,16 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
         if (count <= 0) continue
 
         for (let i = 1; i <= count; i += 1) {
-          const scopeKey = `${fieldKey}::${String(optId)}::${i}`
+          const scopePrefix = current?.scope?.key ? `${current.scope.key}::` : ""
+          const scopeKey = `${scopePrefix}${fieldKey}::${String(optId)}::${i}`
           targets.push({ nodeId: String(t), scope: { key: scopeKey } })
         }
       }
 
       if (!targets.length) {
         const def = pickDefaultEdgeTarget(flow, node.id)
-        if (def && !seenTargets.has(String(def))) {
+        if (def) {
           targets.push({ nodeId: String(def), scope: current?.scope })
-          seenTargets.add(String(def))
         }
       }
 
@@ -269,11 +287,13 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers) {
     if (node.type === "flow") {
       const target = (node as any)?.data?.target
       if (!firstTerminal && target?.flowId) {
+        const repeatWithScope = !!(node as any)?.data?.repeatWithScope
         firstTerminal = {
           actionType: "transition",
           transition: target,
           transitionFromNodeId: node.id,
           transitionKind: "flow_node",
+          transitionScopeKey: repeatWithScope ? String(current?.scope?.key || "") : "",
         }
       }
       continue
@@ -480,6 +500,7 @@ export type FlowRunResult = {
   transition?: any
   transitionFromNodeId?: string
   transitionKind?: "flow_node"
+  transitionScopeKey?: string
   resultNodeId?: string
   resultType?: "result" | "alert"
   resultColor?: "red" | "green"
@@ -516,6 +537,7 @@ export async function runChainedFlows(opts: {
 
   let currentFlowId = String(opts.startFlowId)
   let currentFlow = opts.startFlow
+  let currentScope: TraverseScope | undefined
   const lineage: TransitionLineageHop[] = []
 
   const visited = new Set<string>()
@@ -532,7 +554,7 @@ export async function runChainedFlows(opts: {
     }
     visited.add(visitKey)
 
-    const run = runFlow(currentFlow, opts.answers)
+    const run = runFlow(currentFlow, opts.answers, currentScope)
 
     if (run.actionType !== "transition" || !run.transition?.flowId) {
       return { flowId: currentFlowId, run, lineage }
@@ -558,13 +580,15 @@ export async function runChainedFlows(opts: {
         : String(nextFlow.startNodeId || "")
 
     currentFlowId = targetFlowId
+    const transitionScopeKey = typeof run.transitionScopeKey === "string" ? run.transitionScopeKey.trim() : ""
+    currentScope = transitionScopeKey ? { key: transitionScopeKey } : undefined
     currentFlow = { ...nextFlow, startNodeId }
     hops += 1
   }
 }
 
-export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRunResult {
-  const t = traverseActiveQuestions(flow, userAnswers)
+export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers, startScope?: TraverseScope): FlowRunResult {
+  const t = traverseActiveQuestions(flow, userAnswers, startScope)
   if (t.activeQuestions.length) {
     return { nextNodeId: t.activeQuestions[0]?.id }
   }
@@ -575,8 +599,8 @@ export function runFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowRun
   return t.firstTerminal || {}
 }
 
-export function preRunFlow(flow: FlowDefinition, userAnswers: UserAnswers): FlowPreRunResult {
-  const t = traverseActiveQuestions(flow, userAnswers)
+export function preRunFlow(flow: FlowDefinition, userAnswers: UserAnswers, startScope?: TraverseScope): FlowPreRunResult {
+  const t = traverseActiveQuestions(flow, userAnswers, startScope)
   if (t.activeQuestions.length) {
     const id = t.activeQuestions[0]?.id
     return { nextNodeId: id, blockedOnQuestionId: id }
@@ -677,7 +701,7 @@ function canEvaluateCondition(node: Extract<FlowNode, { type: "condition" }>, an
   })
 }
 
-export function getVisibleQuestionSequence(flow: FlowDefinition, answers: UserAnswers) {
-  const t = traverseActiveQuestions(flow, answers)
+export function getVisibleQuestionSequence(flow: FlowDefinition, answers: UserAnswers, startScope?: TraverseScope) {
+  const t = traverseActiveQuestions(flow, answers, startScope)
   return t.activeQuestions
 }

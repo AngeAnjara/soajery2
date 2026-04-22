@@ -13,12 +13,14 @@ type FlowJumpNodeData = {
           nodeId: string
         }
   }
+  repeatWithScope?: boolean
 }
 
 export function FlowNode({ data }: NodeProps<FlowJumpNodeData>) {
   const flowId = String((data as any)?.target?.flowId || "")
   const entryType = String((data as any)?.target?.entry?.type || "")
   const nodeId = entryType === "node" ? String((data as any)?.target?.entry?.nodeId || "") : ""
+  const repeatWithScope = !!(data as any)?.repeatWithScope
 
   return (
     <div className="relative overflow-hidden rounded-xl border bg-card p-3 text-foreground shadow-sm">
@@ -39,6 +41,7 @@ export function FlowNode({ data }: NodeProps<FlowJumpNodeData>) {
           entry: {entryType || "start"}
           {entryType === "node" ? ` (${nodeId || "—"})` : ""}
         </div>
+        <div className="truncate">repeat scope: {repeatWithScope ? "on" : "off"}</div>
       </div>
 
       <Handle type="target" position={Position.Left} className="!h-3 !w-3 !border-2 !border-background !bg-amber-500" />
