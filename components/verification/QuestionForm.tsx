@@ -244,7 +244,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         } as any,
       }
     },
-    [flowId, onRedirect],
+    [flowId],
   )
 
   React.useEffect(() => {
