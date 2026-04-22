@@ -209,19 +209,6 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         throw new Error(data?.error || "Erreur")
       }
 
-      const resolvedFlowId = typeof (data as any)?.resolvedFlowId === "string" ? String((data as any).resolvedFlowId).trim() : ""
-
-      if (resolvedFlowId && resolvedFlowId !== String(flowId)) {
-        if (onRedirect) {
-          onRedirect(resolvedFlowId)
-        }
-        return {
-          redirected: true,
-          questions: [] as any[],
-          terminalAlert: false,
-          preview: null,
-        }
-      }
       return {
         stale: false,
         redirected: false,
@@ -239,7 +226,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
         } as any,
       }
     },
-    [flowId, onRedirect],
+    [flowId],
   )
 
   React.useEffect(() => {
