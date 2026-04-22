@@ -296,6 +296,7 @@ function traverseActiveQuestions(flow: FlowDefinition, answers: UserAnswers, sta
         }
       }
       if (!firstTerminal && target?.flowId) {
+        const repeatWithScope = !!(node as any)?.data?.repeatWithScope
         firstTerminal = {
           actionType: "transition",
           transition: target,
