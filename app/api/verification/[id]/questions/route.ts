@@ -14,6 +14,8 @@ import { getVisibleQuestionSequence, preRunFlow } from "@/services/flowRunner"
 
    let currentFlowId = String(opts.startFlowId)
    let currentFlowDef: any | null = null
+   let currentScope: { key: string } | undefined
+   let currentScopes: { key: string }[] = []
    const visited = new Set<string>()
    let hops = 0
 
@@ -34,7 +36,7 @@ import { getVisibleQuestionSequence, preRunFlow } from "@/services/flowRunner"
        startNodeId: String((flow as any).startNodeId || ""),
      }
 
-     const preview = preRunFlow(flowDef as any, opts.answers || {})
+     const preview = preRunFlow(flowDef as any, opts.answers || {}, currentScope)
      if (preview.actionType !== "transition" || !preview.transition?.flowId) {
        currentFlowId = String((flow as any)._id || currentFlowId)
        currentFlowDef = flowDef
@@ -42,6 +44,12 @@ import { getVisibleQuestionSequence, preRunFlow } from "@/services/flowRunner"
      }
 
      const targetFlowId = String(preview.transition.flowId)
+     const transitionScopeKey = typeof (preview as any)?.transitionScopeKey === "string" ? String((preview as any).transitionScopeKey).trim() : ""
+     const transitionScopeKeys = Array.isArray((preview as any)?.transitionScopeKeys)
+       ? ((preview as any).transitionScopeKeys as any[]).map((k) => String(k || "").trim()).filter((k) => k)
+       : []
+     currentScope = transitionScopeKey ? { key: transitionScopeKey } : undefined
+     currentScopes = transitionScopeKeys.map((k) => ({ key: k }))
 
      const entry = preview.transition?.entry
      const overrideStartNodeId =
@@ -79,7 +87,7 @@ import { getVisibleQuestionSequence, preRunFlow } from "@/services/flowRunner"
      }
    }
 
-   return { resolvedFlowId: currentFlowId, flowDef: currentFlowDef }
+   return { resolvedFlowId: currentFlowId, flowDef: currentFlowDef, scope: currentScope, scopes: currentScopes }
  }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -92,8 +100,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    const questions = getVisibleQuestionSequence(resolved.flowDef as any, {})
-    const preview = preRunFlow(resolved.flowDef as any, {})
+    const scopes = Array.isArray((resolved as any)?.scopes) ? ((resolved as any).scopes as Array<{ key: string }>) : []
+    const questions =
+      scopes.length > 1
+        ? scopes.flatMap((s) => getVisibleQuestionSequence(resolved.flowDef as any, {}, s))
+        : getVisibleQuestionSequence(resolved.flowDef as any, {}, (resolved as any)?.scope)
+    const preview = preRunFlow(resolved.flowDef as any, {}, scopes.length > 0 ? scopes[0] : (resolved as any)?.scope)
     const terminalAlert = preview.resultType === "alert"
 
     const pendingUploadNodeId = typeof (preview as any)?.pendingUploadNodeId === "string" ? String((preview as any).pendingUploadNodeId) : ""
@@ -136,8 +148,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    const questions = getVisibleQuestionSequence(resolved.flowDef as any, answers)
-    const preview = preRunFlow(resolved.flowDef as any, answers)
+    const scopes = Array.isArray((resolved as any)?.scopes) ? ((resolved as any).scopes as Array<{ key: string }>) : []
+    const questions =
+      scopes.length > 1
+        ? scopes.flatMap((s) => getVisibleQuestionSequence(resolved.flowDef as any, answers, s))
+        : getVisibleQuestionSequence(resolved.flowDef as any, answers, (resolved as any)?.scope)
+    const preview = preRunFlow(resolved.flowDef as any, answers, scopes.length > 0 ? scopes[0] : (resolved as any)?.scope)
     const terminalAlert = preview.resultType === "alert"
 
     const pendingUploadNodeId = typeof (preview as any)?.pendingUploadNodeId === "string" ? String((preview as any).pendingUploadNodeId) : ""

@@ -85,6 +85,7 @@ export type OpenAIVisionNodeData = {
 
 export type FlowJumpNodeData = {
   target: FlowTransitionTarget
+  repeatWithScope?: boolean
 }
 
 export type FlowNode =
