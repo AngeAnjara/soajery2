@@ -810,12 +810,28 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
 
             if (!allowQuantity) {
               const options = (Array.isArray(q.data.options) ? q.data.options : [])
-                .map((o: any) => (typeof o === "string" ? o : String(o?.label || o?.id || "").trim()))
-                .filter((x: any) => typeof x === "string" && x.trim() !== "") as string[]
+                .map((o: any) => {
+                  if (typeof o === "string") {
+                    const id = String(o || "").trim()
+                    if (!id) return null
+                    return { id, label: id }
+                  }
+
+                  const id = String(o?.id || o?.label || "").trim()
+                  const optionLabel = String(o?.label || o?.id || "").trim()
+                  if (!id || !optionLabel) return null
+                  return { id, label: optionLabel }
+                })
+                .filter(Boolean) as { id: string; label: string }[]
 
               const selected = Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
-              const toggle = (opt: string) => {
-                const next = selected.includes(opt) ? selected.filter((x) => x !== opt) : [...selected, opt]
+
+              const isSelected = (opt: { id: string; label: string }) => selected.includes(opt.id) || selected.includes(opt.label)
+
+              const toggle = (opt: { id: string; label: string }) => {
+                const next = isSelected(opt)
+                  ? selected.filter((x) => x !== opt.id && x !== opt.label)
+                  : [...selected.filter((x) => x !== opt.label), opt.id]
                 updateAnswer(fieldKey, next)
               }
 
@@ -824,9 +840,9 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
                   <div className="text-sm font-medium">{label}</div>
                   <div className="flex flex-col gap-2">
                     {options.map((opt) => (
-                      <label key={opt} className="flex cursor-pointer items-center gap-2 text-sm">
-                        <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
-                        <span>{opt}</span>
+                      <label key={opt.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input type="checkbox" checked={isSelected(opt)} onChange={() => toggle(opt)} />
+                        <span>{opt.label}</span>
                       </label>
                     ))}
                   </div>
