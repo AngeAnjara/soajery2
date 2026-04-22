@@ -41,6 +41,7 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
   const fetchControllerRef = React.useRef<AbortController | null>(null)
   const evalControllerRef = React.useRef<AbortController | null>(null)
   const fetchSeqRef = React.useRef(0)
+  const answersRef = React.useRef<Record<string, JsonValue>>({})
   const autoSubmitKeyRef = React.useRef<string>("")
   const autoNoQuestionSubmitKeyRef = React.useRef<string>("")
   const visionAutoInFlightRef = React.useRef(false)
@@ -166,6 +167,10 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
       noQuestionAutoInFlightRef.current = false
     }
   }, [loading, pendingUploadNodeId, questions.length, pendingVisionNodeId, pendingActionType, flowId, confirmedAnswers, handleContinuation, onEvaluated])
+
+  React.useEffect(() => {
+    answersRef.current = answers
+  }, [answers])
 
   React.useEffect(() => {
     const hasActiveMultiSelect = questions.some((q) => String((q as any)?.data?.inputType || "") === "multi_select")
@@ -943,7 +948,8 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
           type="button"
           className="w-full"
           onClick={() => {
-            setConfirmedAnswers(answers)
+            const snapshot = JSON.parse(JSON.stringify(answersRef.current || {})) as Record<string, JsonValue>
+            setConfirmedAnswers(snapshot)
           }}
         >
           Valider les sélections
