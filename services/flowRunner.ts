@@ -51,6 +51,16 @@ function scopedFieldKey(base: string, scope?: TraverseScope) {
   return `${base}__${scope.key}`
 }
 
+function hasOwn(obj: unknown, key: string) {
+  return !!obj && typeof obj === "object" && Object.prototype.hasOwnProperty.call(obj, key)
+}
+
+function resolveScopedAnswerKey(base: string, answers: UserAnswers, scope?: TraverseScope) {
+  const scoped = scopedFieldKey(base, scope)
+  if (hasOwn(answers, scoped)) return scoped
+  return base
+}
+
 function isQuantityEnabledForFieldKey(flow: FlowDefinition, fieldKey: string) {
   const key = String(fieldKey || "").trim()
   if (!key) return false
@@ -62,7 +72,8 @@ function canEvaluateConditionScoped(node: Extract<FlowNode, { type: "condition" 
   const branches = Array.isArray(data?.branches) ? data.branches : []
 
   const isRuleReady = (r: any) => {
-    const key = scopedFieldKey(String(r?.fieldKey || ""), scope)
+    const baseKey = String(r?.fieldKey || "")
+    const key = resolveScopedAnswerKey(baseKey, answers, scope)
     return isAnswerProvided((answers as any)?.[key]) && typeof r?.value === "string" && String(r.value).trim() !== ""
   }
 
@@ -88,7 +99,9 @@ function evaluateConditionNodeScoped(node: Extract<FlowNode, { type: "condition"
   const branches = Array.isArray(data?.branches) ? data.branches : []
 
   const evaluateRuleScoped = (r: any) => {
-    const next = { ...(r || {}), fieldKey: scopedFieldKey(String(r?.fieldKey || ""), scope) }
+    const baseKey = String(r?.fieldKey || "")
+    const resolvedKey = resolveScopedAnswerKey(baseKey, answers, scope)
+    const next = { ...(r || {}), fieldKey: resolvedKey }
     return evaluateRule(next as any, answers)
   }
 
