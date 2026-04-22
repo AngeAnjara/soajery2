@@ -84,7 +84,11 @@ function canEvaluateConditionScoped(node: Extract<FlowNode, { type: "condition" 
   }
 
   const hasAnyRules = branches.some((b: any) => Array.isArray(b?.rules) && b.rules.length > 0)
-  if (!hasAnyRules) return false
+  if (!hasAnyRules) {
+    // Keep parity with the non-scoped evaluator: a condition with no explicit
+    // rules is still evaluable and should be able to take its fallback/default branch.
+    return true
+  }
 
   return branches.some((b: any) => {
     const rules = Array.isArray(b?.rules) ? b.rules : []
