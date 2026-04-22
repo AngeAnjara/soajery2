@@ -218,6 +218,7 @@ const flowSchemaObject = z.object({
         type: z.literal("flow"),
         position: z.object({ x: z.number(), y: z.number() }),
         data: z.object({
+          repeatWithScope: z.boolean().optional(),
           target: z.object({
             flowId: z.string().min(1),
             entry: z

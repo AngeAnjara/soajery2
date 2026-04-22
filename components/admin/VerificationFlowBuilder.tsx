@@ -239,7 +239,7 @@ export function VerificationFlowBuilder() {
         const rows = Array.isArray(kind?.data?.questions) ? kind.data.questions : []
         setNodeOptionsText(
           rows
-            .map((q: any) => `${String(q?.fieldKey || "").trim()}|${String(q?.label || "").trim()}|${String(q?.inputType || "text")}`)
+            .map((q: any) => `${String(q?.label || "").trim()}|${String(q?.fieldKey || "").trim()}|${String(q?.inputType || "text")}`)
             .filter(Boolean)
             .join("\n"),
         )
@@ -314,7 +314,7 @@ export function VerificationFlowBuilder() {
         const rows = Array.isArray(row?.data?.questions) ? row.data.questions : []
         setNodeOptionsText(
           rows
-            .map((q: any) => `${String(q?.fieldKey || "").trim()}|${String(q?.label || "").trim()}|${String(q?.inputType || "text")}`)
+            .map((q: any) => `${String(q?.label || "").trim()}|${String(q?.fieldKey || "").trim()}|${String(q?.inputType || "text")}`)
             .filter(Boolean)
             .join("\n"),
         )
@@ -1119,10 +1119,27 @@ export function VerificationFlowBuilder() {
               ? {
                   questions: optionLines
                     .map((line) => {
-                      const [rawFieldKey, rawLabel, rawInputType] = line.split("|")
-                      const fieldKey = String(rawFieldKey || "").trim()
-                      const label = String(rawLabel || rawFieldKey || "").trim()
-                      const questionInputType = String(rawInputType || "text").trim() as any
+                      const [p1, p2, p3] = line.split("|").map((x) => String(x || "").trim())
+                      const typeCandidate = String(p3 || "").trim()
+                      const questionInputType = (typeCandidate || "text") as any
+                      const firstLooksLikeKey = !!p1 && !/\s/.test(p1)
+                      const secondLooksLikeKey = !!p2 && !/\s/.test(p2)
+
+                      // Preferred format: label|fieldKey|inputType
+                      // Backward-compatible format: fieldKey|label|inputType
+                      let label = p1
+                      let fieldKey = p2
+
+                      if (!p2) {
+                        label = p1
+                        fieldKey = p1.toLowerCase().replace(/[^a-z0-9_]+/gi, "_").replace(/^_+|_+$/g, "")
+                      } else if (firstLooksLikeKey && !secondLooksLikeKey) {
+                        fieldKey = p1
+                        label = p2
+                      }
+
+                      fieldKey = String(fieldKey || "").trim()
+                      label = String(label || fieldKey || "").trim()
                       if (!fieldKey || !label) return null
                       return { fieldKey, label, inputType: questionInputType }
                     })
@@ -1652,10 +1669,11 @@ export function VerificationFlowBuilder() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm font-medium">Questions (fieldKey|label|inputType, une par ligne)</label>
+                  <label className="text-sm font-medium">Questions (label|fieldKey|inputType, une par ligne)</label>
                   <textarea
                     value={nodeOptionsText}
                     onChange={(e) => setNodeOptionsText(e.target.value)}
+                    placeholder={"Ex: Nom vendeur|nom_vendeur|text\nEx: Téléphone vendeur|tel_vendeur|text"}
                     className="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm"
                   />
                 </div>
