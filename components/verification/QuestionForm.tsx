@@ -300,6 +300,23 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
     }
   }, [flowId])
 
+  const isAnswered = React.useCallback((value: unknown) => {
+    if (value === undefined || value === null) return false
+    if (typeof value === "string") return value.trim() !== ""
+    if (typeof value === "number") return true
+    if (typeof value === "boolean") return true
+    if (Array.isArray(value)) return value.length > 0
+    if (typeof value === "object") {
+      const values = Object.values(value as any)
+      if (!values.length) return false
+      if (values.some((v) => typeof v === "number")) {
+        return values.some((v) => typeof v === "number" && Number.isFinite(v) && v > 0)
+      }
+      return true
+    }
+    return false
+  }, [])
+
   React.useEffect(() => {
     if (!didInitialLoadRef.current) return
     if (loading) return
@@ -307,6 +324,9 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
     const hasActiveMultiSelect = questions.some((q) => String((q as any)?.data?.inputType || "") === "multi_select")
     const pendingMultiSelectChange = hasActiveMultiSelect && JSON.stringify(answers) !== JSON.stringify(confirmedAnswers)
     if (pendingMultiSelectChange) return
+
+    const allCurrentQuestionsAnswered = questions.every((q) => isAnswered((confirmedAnswers as any)?.[q.data.fieldKey]))
+    if (!allCurrentQuestionsAnswered) return
 
     let cancelled = false
     const t = setTimeout(() => {
@@ -330,13 +350,13 @@ export function QuestionForm({ flowId, onBack, onEvaluated, onRedirect }: Props)
           }
         }
       })()
-    }, 200)
+    }, 1200)
 
     return () => {
       cancelled = true
       clearTimeout(t)
     }
-  }, [answers, confirmedAnswers, fetchQuestions, loading])
+  }, [answers, confirmedAnswers, fetchQuestions, isAnswered, loading, questions])
 
   const updateAnswer = (fieldKey: string, value: JsonValue) => {
     setAnswers((prev) => ({ ...prev, [fieldKey]: value }))
