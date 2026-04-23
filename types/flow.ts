@@ -13,6 +13,17 @@ export type QuestionNodeData = {
   aiMetadata?: AiMetadata
 }
 
+export type QuestionGroupNodeData = {
+  title?: string
+  questions: Array<{
+    label: string
+    fieldKey: string
+    inputType: "boolean" | "select" | "multi_select" | "text" | "number"
+    allowQuantity?: boolean
+    options?: string[] | MultiSelectOption[]
+  }>
+}
+
 export type MultiSelectOption = {
   id: string
   label: string
@@ -85,10 +96,12 @@ export type OpenAIVisionNodeData = {
 
 export type FlowJumpNodeData = {
   target: FlowTransitionTarget
+  repeatWithScope?: boolean
 }
 
 export type FlowNode =
   | { id: string; type: "question"; position: { x: number; y: number }; data: QuestionNodeData }
+  | { id: string; type: "questionGroup"; position: { x: number; y: number }; data: QuestionGroupNodeData }
   | { id: string; type: "condition"; position: { x: number; y: number }; data: ConditionNodeData }
   | { id: string; type: "decisionTree"; position: { x: number; y: number }; data: DecisionTreeNodeData }
   | { id: string; type: "action"; position: { x: number; y: number }; data: ActionNodeData }
